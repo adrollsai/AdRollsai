@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Share2, Upload, Image as ImageIcon } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Share2, Upload, Image as ImageIcon, Trash2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Property = {
@@ -9,26 +9,26 @@ type Property = {
   address: string
   price: string
   status: string
-  image_url: string
+  // We keep image_url for backward compatibility (main thumb), but use 'images' for the gallery
+  image_url: string 
+  images: string[] 
   description?: string
 }
 
 export default function InventoryPage() {
   const supabase = createClient()
   
-  // Data State
+  // State
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
-  
-  // Modal & Action State
   const [showModal, setShowModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [sharingId, setSharingId] = useState<string | null>(null)
   
   // Form State
   const [newProp, setNewProp] = useState({ address: '', price: '', description: '' })
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [previews, setPreviews] = useState<string[]>([])
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -51,16 +51,27 @@ export default function InventoryPage() {
     fetchProperties()
   }, [])
 
-  // 2. Handle File Selection
+  // 2. Handle Multiple File Selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setSelectedFile(file)
-      setPreviewUrl(URL.createObjectURL(file)) // Show preview immediately
+    if (e.target.files && e.target.files.length > 0) {
+      const newFiles = Array.from(e.target.files)
+      
+      // Combine with existing selection
+      setSelectedFiles(prev => [...prev, ...newFiles])
+      
+      // Create previews
+      const newPreviews = newFiles.map(file => URL.createObjectURL(file))
+      setPreviews(prev => [...prev, ...newPreviews])
     }
   }
 
-  // 3. Add Property (Upload + Insert)
+  // Remove a file from selection
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
+    setPreviews(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // 3. Add Property (Multi-Upload)
   const handleAddProperty = async () => {
     if (!newProp.address || !newProp.price) return
     setIsSubmitting(true)
@@ -68,25 +79,33 @@ export default function InventoryPage() {
     const { data: { user } } = await supabase.auth.getUser()
     
     if (user) {
-      let finalImageUrl = `https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.address)}`
+      const uploadedUrls: string[] = []
 
       try {
-        // A. Upload Image if selected
-        if (selectedFile) {
-          const fileExt = selectedFile.name.split('.').pop()
-          const fileName = `${user.id}-${Date.now()}.${fileExt}`
-          
-          const { error: uploadError } = await supabase.storage
-            .from('properties')
-            .upload(fileName, selectedFile)
-
-          if (uploadError) throw uploadError
-
-          const { data: { publicUrl } } = supabase.storage
-            .from('properties')
-            .getPublicUrl(fileName)
+        // A. Upload All Images in Parallel
+        if (selectedFiles.length > 0) {
+          const uploadPromises = selectedFiles.map(async (file) => {
+            const fileExt = file.name.split('.').pop()
+            const fileName = `${user.id}-${Date.now()}-${Math.random()}.${fileExt}`
             
-          finalImageUrl = publicUrl
+            const { error: uploadError } = await supabase.storage
+              .from('properties')
+              .upload(fileName, file)
+
+            if (uploadError) throw uploadError
+
+            const { data: { publicUrl } } = supabase.storage
+              .from('properties')
+              .getPublicUrl(fileName)
+            
+            return publicUrl
+          })
+
+          const results = await Promise.all(uploadPromises)
+          uploadedUrls.push(...results)
+        } else {
+            // Placeholder if no images
+            uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.address)}`)
         }
 
         // B. Save to Database
@@ -96,17 +115,18 @@ export default function InventoryPage() {
             price: newProp.price,
             description: newProp.description,
             status: 'Draft',
-            image_url: finalImageUrl,
+            image_url: uploadedUrls[0], // Main thumbnail
+            images: uploadedUrls // The full gallery
           })
 
         if (error) throw error
 
-        // C. Reset & Refresh
+        // C. Reset
         await fetchProperties()
         setShowModal(false)
         setNewProp({ address: '', price: '', description: '' })
-        setSelectedFile(null)
-        setPreviewUrl(null)
+        setSelectedFiles([])
+        setPreviews([])
 
       } catch (error: any) {
         alert('Error adding property: ' + error.message)
@@ -115,27 +135,36 @@ export default function InventoryPage() {
     setIsSubmitting(false)
   }
 
-  // 4. Smart Share (WhatsApp)
+  // 4. Smart Share (Multi-File)
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
     setSharingId(prop.id)
 
     try {
-      // Construct Caption
       const shareText = `🏠 *New Listing Alert!* \n\n📍 ${prop.address}\n💰 Price: ${prop.price}\n\n${prop.description || ''}\n\n✨ Contact me for details!`
 
       if (navigator.share) {
-        const response = await fetch(prop.image_url)
-        const blob = await response.blob()
-        const file = new File([blob], "listing.jpg", { type: "image/jpeg" })
+        // A. Get list of images (Fallback to just main image if array is empty)
+        const imagesToShare = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
+        
+        // B. Fetch all images as Blobs -> Files
+        const filePromises = imagesToShare.map(async (url, index) => {
+            const response = await fetch(url)
+            const blob = await response.blob()
+            // WhatsApp needs distinct filenames
+            return new File([blob], `listing_${index}.jpg`, { type: "image/jpeg" })
+        })
 
+        const files = await Promise.all(filePromises)
+
+        // C. Trigger Share
         await navigator.share({
-          files: [file],
+          files: files,
           title: 'New Listing',
           text: shareText
         })
       } else {
-        // Fallback for Desktop
+        // Desktop Fallback
         window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
       }
     } catch (error) {
@@ -171,19 +200,26 @@ export default function InventoryPage() {
       {/* Property List */}
       <div className="flex flex-col gap-4">
         {loading ? (
-           <div className="text-center py-10 text-slate-400 text-sm">Loading properties...</div>
+           <div className="text-center py-10 text-slate-400 text-sm">Loading...</div>
         ) : properties.length === 0 ? (
-           <div className="text-center py-10 text-slate-400 text-sm">No properties yet. Click <b>+</b> to add one.</div>
+           <div className="text-center py-10 text-slate-400 text-sm">No properties. Click <b>+</b> to add.</div>
         ) : (
           properties.map((prop) => (
             <div key={prop.id} className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 relative group">
               
-              {/* Image */}
+              {/* Image (Show Count Badge) */}
               <div className="relative h-40 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
                 <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
                 <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">
                   {prop.status}
                 </span>
+                {/* Multi-Image Badge */}
+                {prop.images && prop.images.length > 1 && (
+                    <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded-lg text-[10px] font-bold backdrop-blur-sm flex items-center gap-1">
+                        <ImageIcon size={10} />
+                        +{prop.images.length - 1}
+                    </div>
+                )}
               </div>
 
               {/* Info Row */}
@@ -222,20 +258,42 @@ export default function InventoryPage() {
 
             <div className="space-y-4">
               
-              {/* 1. Photo Upload */}
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full h-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden"
-              >
-                {previewUrl ? (
-                  <img src={previewUrl} className="w-full h-full object-cover" alt="Preview" />
-                ) : (
-                  <div className="text-center text-slate-400">
-                    <div className="flex justify-center mb-2"><ImageIcon size={24} /></div>
-                    <span className="text-xs font-bold uppercase">Tap to Add Photo</span>
-                  </div>
+              {/* 1. Multi-Photo Upload */}
+              <div>
+                <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full h-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden"
+                >
+                    <div className="text-center text-slate-400">
+                        <div className="flex justify-center mb-2"><ImageIcon size={24} /></div>
+                        <span className="text-xs font-bold uppercase">Add Photos (Select Multiple)</span>
+                    </div>
+                    <input 
+                        type="file" 
+                        multiple // <--- Key Change
+                        ref={fileInputRef} 
+                        onChange={handleFileSelect} 
+                        accept="image/*" 
+                        className="hidden" 
+                    />
+                </div>
+
+                {/* Previews Horizontal Scroll */}
+                {previews.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto mt-3 pb-2">
+                        {previews.map((src, index) => (
+                            <div key={index} className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden border border-slate-100">
+                                <img src={src} className="w-full h-full object-cover" />
+                                <button 
+                                    onClick={() => removeFile(index)}
+                                    className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full"
+                                >
+                                    <X size={10} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 )}
-                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
               </div>
 
               {/* 2. Address */}
@@ -270,7 +328,7 @@ export default function InventoryPage() {
                 {isSubmitting ? (
                   <>
                     <Loader2 size={16} className="animate-spin" />
-                    Saving...
+                    Uploading {selectedFiles.length} photos...
                   </>
                 ) : (
                   'Save to Inventory'
