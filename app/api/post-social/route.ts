@@ -8,46 +8,46 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // 2. Extract Data from Request
   const body = await request.json()
   const { imageUrl, caption } = body
 
-  // 3. Get Facebook Token from Supabase Identities
-  // Supabase stores the provider token inside the user object's 'identities' array
-  const facebookIdentity = user.identities?.find(id => id.provider === 'facebook')
-  
-  // Note: The 'provider_token' is usually only available immediately after login in the session.
-  // If this fails, we might need to re-authenticate or use a specific Supabase setting to expose tokens.
-  // For this tutorial, we assume the session is fresh enough to have it.
-  const accessToken = user.user_metadata?.provider_token || facebookIdentity?.identity_data?.provider_access_token // Try multiple paths
+  // 2. GET THE SPECIFIC PAGE TOKEN FROM DB
+  // We look for 'selected_page_token' which matches the page the user clicked in the UI
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('selected_page_token, selected_page_name')
+    .eq('id', user.id)
+    .single()
 
-  // Check Supabase session for the token (Safest bet)
-  const { data: sessionData } = await supabase.auth.getSession()
-  const providerToken = sessionData.session?.provider_token
-
-  if (!providerToken) {
-    return NextResponse.json({ error: 'Facebook token not found. Please reconnect Facebook in Profile.' }, { status: 400 })
+  if (!profile?.selected_page_token) {
+    return NextResponse.json({ 
+      error: 'No Facebook Page selected. Please go to Profile -> Social Accounts and select a page.' 
+    }, { status: 400 })
   }
 
-  // 4. Send to n8n
+  // 3. Send to n8n
   try {
+    // We send the Page Token as 'accessToken', so n8n can use it directly
     const n8nResponse = await fetch(process.env.N8N_SOCIAL_WEBHOOK_URL!, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        accessToken: providerToken,
+        accessToken: profile.selected_page_token, // Using the Page Token
         imageUrl,
         caption
       }),
     })
 
-    if (!n8nResponse.ok) throw new Error('Failed to reach n8n')
+    if (!n8nResponse.ok) {
+      const text = await n8nResponse.text()
+      throw new Error(`n8n error: ${text}`)
+    }
     
     const result = await n8nResponse.json()
     return NextResponse.json(result)
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(error)
-    return NextResponse.json({ error: 'Posting failed' }, { status: 500 })
+    return NextResponse.json({ error: error.message || 'Posting failed' }, { status: 500 })
   }
 }
