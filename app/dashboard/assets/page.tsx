@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, X, Loader2, Share2 } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Asset = {
@@ -43,7 +43,7 @@ export default function AssetsPage() {
   }, [])
 
   // 2. Handle Post to Facebook
-  const handlePost = async () => {
+  const handlePostFacebook = async () => {
     if (!selectedAsset) return
     setIsPosting(true)
 
@@ -64,6 +64,36 @@ export default function AssetsPage() {
         setSelectedAsset(null) // Close modal
       } else {
         alert('Error: ' + (data.error || 'Failed to post'))
+      }
+    } catch (e) {
+      alert('Network error')
+    } finally {
+      setIsPosting(false)
+    }
+  }
+
+  // 3. Handle Post to Instagram
+  const handlePostInstagram = async () => {
+    if (!selectedAsset) return
+    setIsPosting(true)
+
+    try {
+      const response = await fetch('/api/post-instagram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: selectedAsset.url,
+          caption: caption || 'Created with AI ✨ #RealEstate'
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert('Successfully posted to Instagram!')
+        setSelectedAsset(null)
+      } else {
+        alert('Error: ' + (data.error || 'Failed to post. Is your Instagram linked?'))
       }
     } catch (e) {
       alert('Network error')
@@ -142,14 +172,14 @@ export default function AssetsPage() {
             
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-slate-800">Share Asset</h2>
-              <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500">
+              <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors">
                 <X size={20} />
               </button>
             </div>
 
             {/* Image Preview */}
             <div className="rounded-2xl overflow-hidden bg-slate-100 mb-4 border border-slate-100">
-               <img src={selectedAsset.url} className="w-full max-h-[300px] object-contain" />
+               <img src={selectedAsset.url} className="w-full max-h-[300px] object-contain" alt="Preview" />
             </div>
 
             {/* Caption Input */}
@@ -165,36 +195,40 @@ export default function AssetsPage() {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-3">
-               {/* Download Button */}
+            <div className="flex flex-col gap-3">
+               
+               {/* Row 1: Social Buttons */}
+               <div className="flex gap-3">
+                 <button 
+                   onClick={handlePostFacebook}
+                   disabled={isPosting}
+                   className="flex-1 bg-[#1877F2] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform hover:bg-[#166fe5]"
+                 >
+                   {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Facebook size={16} fill="white" />}
+                   Facebook
+                 </button>
+
+                 <button 
+                   onClick={handlePostInstagram}
+                   disabled={isPosting}
+                   className="flex-1 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform hover:opacity-90"
+                 >
+                   {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Instagram size={16} />}
+                   Instagram
+                 </button>
+               </div>
+
+               {/* Row 2: Download Button */}
                <a 
                  href={selectedAsset.url} 
                  download="asset.png"
                  target="_blank"
-                 className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                 rel="noopener noreferrer"
+                 className="w-full bg-slate-100 text-slate-700 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors"
                >
-                 <Download size={16} />
-                 Save
+                 <Download size={14} />
+                 Download High-Res
                </a>
-
-               {/* Facebook Post Button */}
-               <button 
-                 onClick={handlePost}
-                 disabled={isPosting}
-                 className="flex-[2] bg-[#1877F2] text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
-               >
-                 {isPosting ? (
-                   <>
-                     <Loader2 size={16} className="animate-spin" />
-                     Posting...
-                   </>
-                 ) : (
-                   <>
-                     <Facebook size={16} fill="white" />
-                     Post to Page
-                   </>
-                 )}
-               </button>
             </div>
 
           </div>
