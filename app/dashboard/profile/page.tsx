@@ -51,7 +51,6 @@ export default function ProfilePage() {
       if (data.pages && Array.isArray(data.pages)) {
         setFbPages(data.pages)
       } else {
-        console.log("No pages returned or invalid format:", data)
         setFbPages([])
       }
     } catch (e) {
@@ -69,7 +68,6 @@ export default function ProfilePage() {
 
     setSelectedPageId(pageId)
     
-    // Save Page ID, Name, and Token
     await supabase.from('profiles').update({
       selected_page_id: page.id,
       selected_page_name: page.name,
@@ -125,11 +123,9 @@ export default function ProfilePage() {
             if (profile.selected_page_id) {
               setSelectedPageId(profile.selected_page_id)
             } else {
-              // Connected but no page selected? Fetch list.
               fetchPages()
             }
           } else if (currentToken) {
-             // Fallback if DB isn't updated yet but we have a token in session
              setIsFacebookConnected(true)
              fetchPages()
           }
@@ -138,17 +134,16 @@ export default function ProfilePage() {
       } catch (error) {
         console.error("Load error:", error)
       } finally {
-        // Stop loading normally
         if (isMounted) setLoading(false)
       }
     }
 
     init()
 
-    // 4. "KILL SWITCH": Force stop loading after 3 seconds
+    // 4. "KILL SWITCH": Force stop loading after 2.5 seconds
     const timer = setTimeout(() => {
       if (isMounted) setLoading(false)
-    }, 3000)
+    }, 2500)
 
     // 5. Auth Listener
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -173,15 +168,12 @@ export default function ProfilePage() {
 
   // --- ACTIONS ---
 
-  // 2. Connect Facebook (Enhanced Scopes for Business Pages)
   const handleConnectFacebook = async () => {
     const { error } = await supabase.auth.linkIdentity({
       provider: 'facebook',
       options: {
-        // Added 'business_management' to catch pages inside portfolios
-        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
+        scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish',
         redirectTo: window.location.origin + '/dashboard/profile',
-        // Force re-request to ensure missing permissions are asked for
         queryParams: {
           auth_type: 'rerequest'
         }
@@ -190,25 +182,25 @@ export default function ProfilePage() {
     if (error) alert("Link error: " + error.message)
   }
 
-  // 3. Disconnect Facebook (Safe Mode)
   const handleDisconnectFacebook = async () => {
     if (!confirm("Disconnect Facebook?")) return
     
     setIsDisconnecting(true)
     
     try {
+      // 1. Try to unlink from Auth
       const { data: { user } } = await supabase.auth.getUser()
       const fbIdentity = user?.identities?.find(id => id.provider === 'facebook')
       
-      // Only try unlink if ID exists
-      if (fbIdentity?.id) {
-        await supabase.auth.unlinkIdentity(fbIdentity.id)
+      // FIX: Pass the entire 'fbIdentity' object, NOT just the ID string
+      if (fbIdentity) {
+        await supabase.auth.unlinkIdentity(fbIdentity)
       }
     } catch (e) {
       console.warn("Auth unlink warning:", e)
     }
 
-    // ALWAYS clear DB and Local State
+    // 2. ALWAYS clear DB and Local State
     if (userId) {
       await supabase.from('profiles').update({ 
         facebook_token: null,
@@ -218,6 +210,7 @@ export default function ProfilePage() {
       }).eq('id', userId)
     }
 
+    // Force Reset UI
     setIsFacebookConnected(false)
     setFbPages([])
     setSelectedPageId('')
@@ -305,7 +298,6 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* Page Selector */}
           {isFacebookConnected && (
             <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
               <div className="flex justify-between items-center mb-2">
@@ -326,7 +318,7 @@ export default function ProfilePage() {
               ) : (
                 <div className="py-2">
                   <p className="text-xs text-slate-400 mb-2">No pages found.</p>
-                  <button onClick={handleDisconnectFacebook} className="text-[10px] text-blue-500 hover:underline">Reconnect to select pages</button>
+                  <button onClick={handleConnectFacebook} className="text-[10px] text-blue-500 hover:underline">Update Permissions / Refresh List</button>
                 </div>
               )}
             </div>
