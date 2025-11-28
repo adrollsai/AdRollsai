@@ -32,15 +32,15 @@ type Profile = {
   mission_statement: string
 }
 
-// --- THE STYLE LIBRARY ---
+// --- THE AI DESIGN BRAIN (Reference Styles) ---
 const DESIGN_STYLES = [
   {
-    name: "The Investor",
-    prompt: "Design a high-contrast real estate flyer. \n\nVISUAL STYLE:\n- Use a split layout: Top 60% property photos, Bottom 40% solid background.\n- Use Bold, Green/Teal typography.\n- Vibe: Professional, High ROI, Urgent."
+    name: "The Investor (Split Layout)",
+    prompt: "Design a high-contrast real estate flyer optimized for investors. \n\nVISUAL STYLE:\n- Use a split layout: Top 60% property photos, Bottom 40% solid background.\n- Use Bold, Green/Teal typography.\n- Vibe: Professional, High ROI, Urgent."
   },
   {
     name: "Luxury Full-Bleed",
-    prompt: "Create a premium, cinematic real estate poster. \n\nVISUAL STYLE:\n- Use the property photo as a full-screen background.\n- Overlay a sleek, semi-transparent glass card at the bottom.\n- Vibe: Expensive, Elegant, Serif Fonts, Minimalist."
+    prompt: "Create a premium, cinematic real estate poster. \n\nVISUAL STYLE:\n- Use the best property photo as a full-screen background.\n- Overlay a sleek, semi-transparent glass card at the bottom.\n- Vibe: Expensive, Elegant, Serif Fonts, Minimalist."
   },
   {
     name: "Modern Geometric",
@@ -56,7 +56,7 @@ export default function CreationPage() {
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: 'ai', text: 'Select a property! I will auto-design a graphic using your photos. You can tell me "no price" or "make it dark" to override the style.' }
+    { id: 1, role: 'ai', text: 'Select a property, and I will design a creative asset for it. You can add specific instructions like "make it dark theme" or "no price".' }
   ])
   
   // Data State
@@ -66,7 +66,7 @@ export default function CreationPage() {
   
   const chatEndRef = useRef<HTMLDivElement>(null)
 
-  // 1. Fetch Data
+  // 1. Fetch Data (Profile + Properties)
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -76,9 +76,18 @@ export default function CreationPage() {
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (profileData) setProfile(profileData)
 
-      // Get Properties
-      const { data: props } = await supabase.from('properties').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
-      if (props) setProperties(props)
+      // Get Properties (Explicit Selection to ensure fields are grabbed)
+      const { data: props } = await supabase
+        .from('properties')
+        .select('id, title, address, price, images, image_url, description, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+      
+      if (props) {
+        console.log("--- DEBUG: LOADED PROPERTIES ---")
+        console.log(props) // Check your Browser Console for this!
+        setProperties(props)
+      }
     }
     init()
   }, [])
@@ -88,9 +97,10 @@ export default function CreationPage() {
   // Helper: Detect Aspect Ratio
   const detectAspectRatio = (text: string, currentMode: string) => {
     const t = text.toLowerCase()
-    if (t.includes('landscape') || t.includes('horizontal')) return '16:9'
-    if (t.includes('portrait') || t.includes('vertical')) return '9:16'
-    if (t.includes('square')) return '1:1'
+    if (t.includes('landscape') || t.includes('horizontal') || t.includes('wide')) return '16:9'
+    if (t.includes('portrait') || t.includes('vertical') || t.includes('tall')) return '9:16'
+    if (t.includes('square') || t.includes('1:1')) return '1:1'
+    
     return currentMode === 'video' ? '9:16' : '1:1'
   }
 
@@ -106,66 +116,77 @@ export default function CreationPage() {
     setIsThinking(true)
 
     try {
+      // A. Validation
       const prop = properties.find(p => p.id === selectedPropId)
       if (!prop) throw new Error("Please select a property first.")
 
-      // A. Build Image Array (Top 2 Photos + Logo)
+      console.log("--- DEBUG: SENDING PROPERTY DATA ---")
+      console.log("Title:", prop.title)
+      console.log("Desc:", prop.description)
+
+      // B. Build Image Array (Top 2 Photos + Logo)
       let propImages: string[] = []
-      // Use array if exists, else fallback to single url
       if (prop.images && prop.images.length > 0) {
         propImages = prop.images.slice(0, 2)
       } else if (prop.image_url) {
         propImages = [prop.image_url]
       }
 
-      // Add Logo (Unless user explicitly says "no logo")
+      // Add Logo (Unless user opted out)
       if (profile?.logo_url && !userText.toLowerCase().includes("no logo")) {
         propImages.push(profile.logo_url)
       }
 
-      // B. Dimension & Style
+      // C. Detect Dimensions
       const targetRatio = detectAspectRatio(userText, mode)
+      const orientationText = targetRatio === '16:9' ? 'Landscape' : targetRatio === '9:16' ? 'Portrait' : 'Square'
+
+      // D. Pick Random Style
       const randomStyle = DESIGN_STYLES[Math.floor(Math.random() * DESIGN_STYLES.length)]
       
-      // C. Construct the "Smart Prompt"
-      const finalPrompt = `
-        TASK: Create a professional real estate graphic.
-        
-        1. VISUAL STYLE TEMPLATE:
-        ${randomStyle.prompt}
-        
-        2. PROPERTY DATA (Include these unless user says otherwise):
-        - Title: ${prop.title}
-        - Location: ${prop.address}
-        - Price: ${prop.price}
-        - Description Context: ${prop.description || ""}
-        
-        3. BRANDING:
-        - Brand Name: ${profile?.business_name}
-        - Contact Info: ${profile?.contact_number}
-        - Accent Color: ${profile?.brand_color || "Teal"}
-        
-        4. USER INSTRUCTIONS (***HIGHEST PRIORITY***):
-        "${userText}"
-        (Example: If user says "no price", DO NOT include the price text. If user says "dark mode", ignore the style template and make it dark.)
+      // E. Construct the Master Prompt
+      let finalPrompt = randomStyle.prompt
+        .replace('[LOCATION]', prop.address)
+        .replace('[PRICE]', prop.price)
+        .replace('[PHONE]', profile?.contact_number || "DM for info")
+      
+      finalPrompt += `
+        \n--- GENERATION SPECS ---
+        TARGET DIMENSION: ${orientationText} (${targetRatio}). Ensure layout fits this shape.
+        PROPERTY TITLE: "${prop.title}"
+        PROPERTY DESCRIPTION: "${prop.description || ''}"
+        USER EXTRA INSTRUCTIONS: "${userText}"
+        BRAND NAME: "${profile?.business_name || "Real Estate"}"
+        BRAND COLOR: "${profile?.brand_color || "Teal"}"
+        Use the provided input images (Property Photos + Logo).
       `
 
-      // D. Send to API
+      // F. Send to API (Forwarding raw ingredients too)
       const startResponse = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+            // RAW INGREDIENTS (For n8n Logic)
+            userInstructions: userText,
+            propertyDescription: prop.description || "",
+            propertyTitle: prop.title || "",
+            contactNumber: profile?.contact_number || "",
+            businessName: profile?.business_name || "",
+            
+            // COMPILED PROMPT (For fallback)
             message: finalPrompt, 
+            
+            // TECHNICAL SPECS
             mode: mode,
-            imageUrls: propImages, // Array of [Photo1, Photo2, Logo]
-            aspectRatio: targetRatio
+            imageUrls: propImages, 
+            aspectRatio: targetRatio 
         })
       })
       
       const startData = await startResponse.json()
       const taskId = startData.taskId 
 
-      // E. Polling Loop
+      // G. Polling Loop (Wait 15s then check)
       await new Promise(resolve => setTimeout(resolve, 15000)) 
 
       const checkResponse = await fetch('/api/check-status', {
@@ -185,12 +206,12 @@ export default function CreationPage() {
       }
 
       if (finalImageUrl) {
-        // Auto-Save Draft
+        // Auto-Save to Drafts
         if (profile) {
             await supabase.from('daily_drafts').insert({
                 user_id: profile.id,
                 image_url: finalImageUrl,
-                caption: `🔥 ${prop.title}! ${prop.price}.`,
+                caption: `🔥 ${prop.title}! ${prop.price}. Contact: ${profile.contact_number}`,
                 status: 'pending'
             })
         }
@@ -198,13 +219,13 @@ export default function CreationPage() {
         const aiMsg: Message = { 
           id: Date.now() + 1, 
           role: 'ai', 
-          text: `I've created a design using the "${randomStyle.name}" style. You can find it in Drafts or ask for changes!`,
+          text: `I've created a ${orientationText} design using the "${randomStyle.name}" style. It's saved to your Drafts!`,
           mediaType: mode,
           mediaUrl: finalImageUrl
         }
         setMessages(prev => [...prev, aiMsg])
       } else {
-         throw new Error("Still processing... check back in a minute.")
+         throw new Error("Still processing... please check your Assets tab in a minute.")
       }
 
     } catch (error: any) {
@@ -218,7 +239,7 @@ export default function CreationPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] bg-surface">
       
-      {/* HEADER */}
+      {/* --- HEADER --- */}
       <div className="bg-white px-5 py-3 shadow-sm z-10 space-y-3">
         <div className="flex justify-between items-center">
             <h1 className="text-lg font-bold text-slate-800">Creator</h1>
@@ -228,7 +249,7 @@ export default function CreationPage() {
             </div>
         </div>
 
-        {/* SELECTOR */}
+        {/* Property Selector */}
         <div className="relative">
             <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <select 
@@ -246,7 +267,7 @@ export default function CreationPage() {
         </div>
       </div>
 
-      {/* CHAT */}
+      {/* --- CHAT --- */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -265,14 +286,14 @@ export default function CreationPage() {
             </div>
           </div>
         ))}
-        {isThinking && <div className="flex gap-2 text-xs text-slate-400 ml-8"><Loader2 size={14} className="animate-spin" /> Designing...</div>}
+        {isThinking && <div className="flex gap-2 text-xs text-slate-400 ml-8"><Loader2 size={14} className="animate-spin" /> Designing with your photos...</div>}
         <div ref={chatEndRef} />
       </div>
 
       {/* INPUT */}
       <div className="p-4 bg-surface pb-6">
         <div className="relative flex items-center">
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={selectedPropId ? "Add instructions (e.g. no price)..." : "Select property first..."} disabled={isThinking || !selectedPropId} className="w-full bg-white border-none py-3 pl-5 pr-12 rounded-full shadow-lg shadow-blue-50 text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none disabled:opacity-50" />
+          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={selectedPropId ? "Instructions (e.g. no price)..." : "Select a property above..."} disabled={isThinking || !selectedPropId} className="w-full bg-white border-none py-3 pl-5 pr-12 rounded-full shadow-lg shadow-blue-50 text-sm text-slate-700 focus:ring-2 focus:ring-primary outline-none disabled:opacity-50" />
           <button onClick={handleSend} disabled={isThinking || !selectedPropId} className="absolute right-2 bg-primary hover:bg-blue-300 text-primary-text p-2 rounded-full transition-colors disabled:opacity-50"><Send size={16} strokeWidth={2.5} /></button>
         </div>
       </div>
