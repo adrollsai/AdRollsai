@@ -51,7 +51,6 @@ export default function ProfilePage() {
       if (data.pages && Array.isArray(data.pages)) {
         setFbPages(data.pages)
       } else {
-        console.log("No pages returned or invalid format:", data)
         setFbPages([])
       }
     } catch (e) {
@@ -76,13 +75,23 @@ export default function ProfilePage() {
     }).eq('id', userId)
   }
 
-  // --- CORE: Load Data (With "Kill Switch") ---
+  // --- CORE: Load Data ---
   useEffect(() => {
     let isMounted = true
 
     const init = async () => {
       try {
-        // 1. Check Session
+        // 0. HANDLE ERRORS FROM CALLBACK
+        const params = new URLSearchParams(window.location.search)
+        const errorMsg = params.get('error')
+
+        if (errorMsg) {
+          alert(`⚠️ Connection Failed: ${errorMsg}`)
+          // Clean URL so we don't show the alert again on refresh
+          router.replace('/dashboard/profile')
+          return 
+        }
+
         const { data: { session } } = await supabase.auth.getSession()
         const user = session?.user
 
@@ -92,17 +101,7 @@ export default function ProfilePage() {
         }
         if (isMounted) setUserId(user.id)
 
-        // 2. Capture Token if just returned from FB
-        const currentToken = session?.provider_token
-        if (currentToken) {
-          console.log("Capturing fresh FB token...")
-          await supabase
-            .from('profiles')
-            .update({ facebook_token: currentToken })
-            .eq('id', user.id)
-        }
-
-        // 3. Fetch Profile from DB
+        // Fetch Profile from DB
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
@@ -118,17 +117,17 @@ export default function ProfilePage() {
             logoUrl: profile.logo_url || ''
           })
           
-          // Check FB Status
-          if (profile.facebook_token) {
+          // Check FB Status based on DB token
+          // We check if it starts with 'EAA' (Facebook Token) to avoid the Google token issue
+          if (profile.facebook_token && profile.facebook_token.startsWith('EAA')) {
             setIsFacebookConnected(true)
             if (profile.selected_page_id) {
               setSelectedPageId(profile.selected_page_id)
             } else {
               fetchPages()
             }
-          } else if (currentToken) {
-             setIsFacebookConnected(true)
-             fetchPages()
+          } else {
+             setIsFacebookConnected(false)
           }
         }
 
@@ -140,29 +139,18 @@ export default function ProfilePage() {
     }
 
     init()
-
-    // 4. "KILL SWITCH"
-    const timer = setTimeout(() => {
-      if (isMounted) setLoading(false)
-    }, 2500)
-
-    // 5. Auth Listener
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    
+    // Auth Listener to refresh UI if session updates (but no saving logic here)
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        const token = session?.provider_token
-        if (token && session?.user?.id) {
-           await supabase.from('profiles').update({ facebook_token: token }).eq('id', session.user.id)
-           if (isMounted) {
-             setIsFacebookConnected(true)
-             fetchPages()
-           }
-        }
+         if (isMounted) {
+             init() 
+         }
       }
     })
 
     return () => {
       isMounted = false
-      clearTimeout(timer)
       authListener.subscription.unsubscribe()
     }
   }, [router, supabase])
@@ -170,36 +158,23 @@ export default function ProfilePage() {
   // --- ACTIONS ---
 
   const handleConnectFacebook = async () => {
-    const { error } = await supabase.auth.linkIdentity({
+    // UPDATED: Using signInWithOAuth because the account is likely already linked.
+    // This refreshes the session and triggers our server-side callback to capture the token.
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
         scopes: 'pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
-        redirectTo: window.location.origin + '/dashboard/profile',
-        queryParams: {
-          auth_type: 'rerequest'
-        }
+        redirectTo: window.location.origin + '/auth/callback?next=/dashboard/profile',
       }
     })
-    if (error) alert("Link error: " + error.message)
+    if (error) alert("Connection error: " + error.message)
   }
 
   const handleDisconnectFacebook = async () => {
     if (!confirm("Disconnect Facebook?")) return
-    
     setIsDisconnecting(true)
     
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const fbIdentity = user?.identities?.find(id => id.provider === 'facebook')
-      
-      // FIX: Pass the ENTIRE IDENTITY OBJECT, not just the ID string
-      if (fbIdentity) {
-        await supabase.auth.unlinkIdentity(fbIdentity)
-      }
-    } catch (e) {
-      console.warn("Auth unlink warning:", e)
-    }
-
+    // Clear Database
     if (userId) {
       await supabase.from('profiles').update({ 
         facebook_token: null,

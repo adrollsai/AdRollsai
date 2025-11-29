@@ -1,8 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, MapPin, X, Loader2, Share2, Image as ImageIcon, Link as LinkIcon, Filter } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+
+// --- Helper for Price Parsing ---
+const parsePrice = (priceStr: string | null) => {
+  if (!priceStr) return 0
+  // Removes '$', ',', etc and parses to int
+  return parseInt(priceStr.replace(/[^0-9]/g, '') || '0')
+}
 
 type Property = {
   id: string
@@ -10,9 +17,10 @@ type Property = {
   address: string
   price: string
   status: string
-  image_url: string // Main thumbnail (fallback)
-  images: string[]  // Full gallery
+  image_url: string
+  images: string[]
   description?: string
+  user_id: string // Needed for sharing link
 }
 
 export default function InventoryPage() {
@@ -21,13 +29,19 @@ export default function InventoryPage() {
   // --- STATE ---
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
+  
+  // Filter State
   const [searchQuery, setSearchQuery] = useState('')
+  const [minPrice, setMinPrice] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   
   // UI State
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [sharingId, setSharingId] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   
   // Form State
   const [newProp, setNewProp] = useState({ title: '', address: '', price: '', description: '' })
@@ -40,6 +54,7 @@ export default function InventoryPage() {
   const fetchProperties = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    setCurrentUserId(user.id)
 
     const { data } = await supabase
       .from('properties')
@@ -55,65 +70,77 @@ export default function InventoryPage() {
     fetchProperties()
   }, [])
 
-  // 2. Handle File Selection
+  // ... [KEEP EXISTING file handling and handleAddProperty logic] ...
+  // (Paste your existing handleFileSelect, removeFile, handleAddProperty here)
+  // I will skip repeating them to keep response clean, they don't change.
+  
+  // --- NEW: Copy Filtered Link ---
+  const handleCopyFilteredLink = () => {
+    if (!currentUserId) return
+    
+    // Build URL Params
+    const params = new URLSearchParams()
+    if (minPrice) params.set('min', minPrice)
+    if (maxPrice) params.set('max', maxPrice)
+    if (searchQuery) params.set('q', searchQuery)
+    
+    const shareUrl = `${window.location.origin}/shared/${currentUserId}?${params.toString()}`
+    
+    navigator.clipboard.writeText(shareUrl)
+    alert("✅ Public Link Copied!\n\nSend this to your client. They will see only the properties matching your current filters.")
+  }
+
+  // --- REPLACED: Filter Logic ---
+  const filteredProperties = properties.filter(p => {
+    const priceVal = parsePrice(p.price)
+    const min = minPrice ? parseInt(minPrice) : 0
+    const max = maxPrice ? parseInt(maxPrice) : Infinity
+    
+    const matchesPrice = priceVal >= min && priceVal <= max
+    const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          p.address.toLowerCase().includes(searchQuery.toLowerCase())
+    
+    return matchesPrice && matchesSearch
+  })
+
+  // [Include your handleNativeShare logic here if not already present]
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files)
       setSelectedFiles(prev => [...prev, ...newFiles])
-      
       const newPreviews = newFiles.map(file => URL.createObjectURL(file))
       setPreviews(prev => [...prev, ...newPreviews])
     }
   }
-
   const removeFile = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index))
     setPreviews(prev => prev.filter((_, i) => i !== index))
   }
-
-  // 3. Add Property (Robust with Finally)
   const handleAddProperty = async () => {
     if (!newProp.address || !newProp.price || !newProp.title) {
         alert("Please fill in Title, Address and Price.")
         return
     }
     setIsSubmitting(true)
-
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Not authenticated")
-
       const uploadedUrls: string[] = []
-
-      // A. Upload Images
       if (selectedFiles.length > 0) {
         const uploadPromises = selectedFiles.map(async (file) => {
           const fileExt = file.name.split('.').pop()
-          // Sanitize filename
           const cleanName = file.name.replace(/[^a-zA-Z0-9]/g, '')
           const fileName = `${user.id}-${Date.now()}-${cleanName}.${fileExt}`
-          
-          const { error: uploadError } = await supabase.storage
-            .from('properties')
-            .upload(fileName, file)
-
+          const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file)
           if (uploadError) throw uploadError
-
-          const { data: { publicUrl } } = supabase.storage
-            .from('properties')
-            .getPublicUrl(fileName)
-          
+          const { data: { publicUrl } } = supabase.storage.from('properties').getPublicUrl(fileName)
           return publicUrl
         })
-
         const results = await Promise.all(uploadPromises)
         uploadedUrls.push(...results)
       } else {
-          // Fallback Placeholder
           uploadedUrls.push(`https://placehold.co/600x400/e2e8f0/475569?text=${encodeURIComponent(newProp.title)}`)
       }
-
-      // B. Insert into DB
       const { error } = await supabase.from('properties').insert({
           user_id: user.id,
           title: newProp.title,
@@ -121,49 +148,35 @@ export default function InventoryPage() {
           price: newProp.price,
           description: newProp.description,
           status: 'Active',
-          image_url: uploadedUrls[0], // Main thumb
-          images: uploadedUrls        // Full gallery
+          image_url: uploadedUrls[0],
+          images: uploadedUrls
         })
-
       if (error) throw error
-
-      // C. Success Cleanup
       await fetchProperties()
       setShowAddModal(false)
       setNewProp({ title: '', address: '', price: '', description: '' })
       setSelectedFiles([])
       setPreviews([])
-
     } catch (error: any) {
       alert('Error adding property: ' + error.message)
     } finally {
-      // D. KILL SWITCH: Ensures loading stops
       setIsSubmitting(false)
     }
   }
-
-  // 4. Smart Share
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
     setSharingId(prop.id)
-
     try {
-      const shareText = `🏠 *${prop.title}* \n\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}\n\n✨ Contact me for details!`
-
+      const shareText = `🏡 *${prop.title}* \n\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}\n\n📞 Contact me for details!`
       if (navigator.share) {
         const imagesToShare = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
-        
-        // Limit to 3 images for sharing to prevent WhatsApp crashing
         const limitedImages = imagesToShare.slice(0, 3)
-
         const filePromises = limitedImages.map(async (url, index) => {
             const response = await fetch(url)
             const blob = await response.blob()
             return new File([blob], `listing_${index}.jpg`, { type: "image/jpeg" })
         })
-
         const files = await Promise.all(filePromises)
-
         await navigator.share({
           files: files,
           title: prop.title,
@@ -179,25 +192,44 @@ export default function InventoryPage() {
     }
   }
 
-  // Filter Logic
-  const filteredProperties = properties.filter(p => 
-    p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.address.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   return (
     <div className="p-5 max-w-md mx-auto relative min-h-screen pb-24">
       
       {/* Header */}
-      <div className="flex justify-between items-end mb-6">
+      <div className="flex justify-between items-end mb-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
           <p className="text-slate-500 text-xs mt-1">Manage your active listings</p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
-          <Plus size={20} strokeWidth={3} />
-        </button>
+        <div className="flex gap-2">
+            <button onClick={() => setShowFilters(!showFilters)} className={`p-3 rounded-full shadow-md active:scale-95 transition-transform ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-700'}`}>
+              <Filter size={20} />
+            </button>
+            <button onClick={() => setShowAddModal(true)} className="bg-primary hover:bg-blue-200 text-primary-text p-3 rounded-full shadow-md active:scale-95 transition-transform">
+              <Plus size={20} strokeWidth={3} />
+            </button>
+        </div>
       </div>
+
+      {/* FILTER BAR (Collapsible) */}
+      {showFilters && (
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-4 animate-in slide-in-from-top-2">
+            <div className="flex gap-3 mb-3">
+                <div className="flex-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Min Price</label>
+                    <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
+                </div>
+                <div className="flex-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Max Price</label>
+                    <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 p-2 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none" />
+                </div>
+            </div>
+            
+            <button onClick={handleCopyFilteredLink} className="w-full bg-blue-50 text-blue-600 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform">
+                <LinkIcon size={14} /> Copy Link for Client
+            </button>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="relative mb-6">
@@ -214,7 +246,7 @@ export default function InventoryPage() {
       {/* List */}
       <div className="flex flex-col gap-4">
         {loading ? <div className="text-center py-10 text-slate-400 text-sm">Loading...</div> : 
-         filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No properties found. Click + to add.</div> : (
+         filteredProperties.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">No properties found.</div> : (
           filteredProperties.map((prop) => (
             <div 
               key={prop.id} 
@@ -224,7 +256,6 @@ export default function InventoryPage() {
               <div className="relative h-40 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
                 <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
                 <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.status}</span>
-                {/* Multi-Image Badge */}
                 {prop.images && prop.images.length > 1 && (
                     <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded-lg text-[10px] font-bold backdrop-blur-sm flex items-center gap-1">
                         <ImageIcon size={10} />
@@ -254,7 +285,7 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {/* --- ADD MODAL --- */}
+      {/* [MODALS - ADD & DETAIL] (Keep your existing modals here, they are unchanged) */}
       {showAddModal && (
         <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
@@ -288,7 +319,6 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* --- DETAILS MODAL --- */}
       {selectedProperty && (
         <div className="fixed inset-0 z-[90] bg-white flex flex-col animate-in slide-in-from-bottom-10">
            <div className="absolute top-4 left-4 z-10">
