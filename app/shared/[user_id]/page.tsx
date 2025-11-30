@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams, usePathname } from 'next/navigation'
-import { MapPin, Phone, Loader2, Image as ImageIcon, AlertCircle, LayoutGrid, BookOpen, ChevronRight, X } from 'lucide-react'
+import { MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, BookOpen, ChevronRight, X, Filter, Check } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 // --- Types ---
@@ -15,6 +15,7 @@ type Property = {
   image_url: string
   images: string[]
   description?: string
+  property_type?: string
 }
 
 type Post = {
@@ -27,6 +28,8 @@ type Post = {
   tags: string[]
 }
 
+const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots']
+
 // --- Helper: Price Parser ---
 const parsePrice = (priceStr: string | null) => {
   if (!priceStr) return 0
@@ -35,7 +38,6 @@ const parsePrice = (priceStr: string | null) => {
 }
 
 export default function PublicProfilePage() {
-  // --- HOOKS ---
   const params = useParams()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -51,50 +53,47 @@ export default function PublicProfilePage() {
   const [properties, setProperties] = useState<Property[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   
-  // Selection (For viewing a full blog post)
+  // Selection
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
 
-  // Filters
-  const minQuery = searchParams.get('min')
-  const maxQuery = searchParams.get('max')
-  const qQuery = searchParams.get('q')
+  // FILTER STATE (Interactive)
+  const [showFilters, setShowFilters] = useState(false)
+  const [minPrice, setMinPrice] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
 
   // --- 1. ID EXTRACTION ---
   const getSafeUserId = () => {
     if (params?.userId) return params.userId as string
-    if (params?.id) return params.id as string
+    if (params?.id) return params.id as string // Next 15+ handling
     if (params && Object.keys(params).length > 0) return Object.values(params)[0] as string
-    if (pathname) {
-        const segments = pathname.split('/')
-        const sharedIndex = segments.indexOf('shared')
-        if (sharedIndex !== -1 && segments[sharedIndex + 1]) return segments[sharedIndex + 1]
-    }
     return null
   }
 
   // --- 2. DATA FETCHING ---
   useEffect(() => {
     const userId = getSafeUserId()
+    
+    // Initialize filters from URL if present
+    const urlMin = searchParams.get('min')
+    const urlMax = searchParams.get('max')
+    const urlTypes = searchParams.get('types')
+    
+    if (urlMin) setMinPrice(urlMin)
+    if (urlMax) setMaxPrice(urlMax)
+    if (urlTypes) setSelectedTypes(urlTypes.split(','))
 
     if (!userId) {
-        const timer = setTimeout(() => { if (loading) { setErrorMsg("Invalid Page Link"); setLoading(false) } }, 500)
-        return () => clearTimeout(timer)
-    }
-
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    if (!uuidRegex.test(userId)) {
-        setErrorMsg("Invalid Page Link (Bad ID)")
+        setErrorMsg("Invalid Page Link")
         setLoading(false)
         return
     }
 
     const fetchData = async () => {
       try {
-        // A. Profile
         const { data: profileData } = await supabase.from('profiles').select('*').eq('id', userId).single()
         if (profileData) setProfile(profileData)
 
-        // B. Properties
         const { data: props } = await supabase
             .from('properties')
             .select('*')
@@ -102,7 +101,6 @@ export default function PublicProfilePage() {
             .order('created_at', { ascending: false })
         if (props) setProperties(props)
 
-        // C. Blog Posts
         const { data: blogPosts } = await supabase
             .from('posts')
             .select('*')
@@ -120,20 +118,25 @@ export default function PublicProfilePage() {
     }
 
     fetchData()
-  }, [params, pathname])
+  }, []) // Run once on mount
 
   // --- 3. FILTER LOGIC ---
+  const toggleType = (type: string) => {
+    setSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type])
+  }
+
   const filteredProperties = properties.filter(p => {
     const priceVal = parsePrice(p.price)
-    const min = minQuery ? parseInt(minQuery) : 0
-    const max = maxQuery ? parseInt(maxQuery) : Infinity
-    const search = (qQuery || '').toLowerCase()
+    const min = minPrice ? parseInt(minPrice) : 0
+    const max = maxPrice ? parseInt(maxPrice) : Infinity
     
-    // const isActive = p.status?.toLowerCase() === 'active' // Uncomment to hide drafts
+    // Type Filter
+    const matchesType = selectedTypes.length === 0 || (p.property_type && selectedTypes.includes(p.property_type))
+    
+    // Price Filter
     const matchesPrice = priceVal >= min && priceVal <= max
-    const matchesSearch = p.title?.toLowerCase().includes(search) || p.address?.toLowerCase().includes(search)
     
-    return matchesPrice && matchesSearch
+    return matchesPrice && matchesType
   })
 
   // --- RENDER ---
@@ -166,16 +169,10 @@ export default function PublicProfilePage() {
 
             {/* TABS */}
             <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-fit">
-                <button 
-                    onClick={() => setActiveTab('inventory')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'inventory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
+                <button onClick={() => setActiveTab('inventory')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'inventory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                     <LayoutGrid size={14} /> Inventory
                 </button>
-                <button 
-                    onClick={() => setActiveTab('blog')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'blog' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
+                <button onClick={() => setActiveTab('blog')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'blog' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                     <BookOpen size={14} /> Blog
                 </button>
             </div>
@@ -188,21 +185,63 @@ export default function PublicProfilePage() {
         {/* INVENTORY TAB */}
         {activeTab === 'inventory' && (
             <div className="space-y-4 animate-in fade-in duration-300">
+                
+                {/* Filters Header */}
                 <div className="flex justify-between items-end mb-2">
                     <h2 className="font-bold text-slate-700">Available Properties</h2>
-                    <span className="text-xs text-slate-400">{filteredProperties.length} found</span>
+                    <button onClick={() => setShowFilters(!showFilters)} className={`p-2 rounded-lg flex items-center gap-1.5 text-xs font-bold transition-colors ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                        <Filter size={12} /> Filter
+                    </button>
                 </div>
+
+                {/* Filter Controls (Collapsible) */}
+                {showFilters && (
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 animate-in slide-in-from-top-2 space-y-3">
+                        <div className="flex gap-3">
+                            <div className="flex-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Min Price</label>
+                                <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0" className="w-full bg-slate-50 p-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-100" />
+                            </div>
+                            <div className="flex-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Max Price</label>
+                                <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Any" className="w-full bg-slate-50 p-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-100" />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block mb-1">Type</label>
+                            <div className="flex gap-2 flex-wrap">
+                                {PROPERTY_TYPES.map(type => {
+                                    const isSelected = selectedTypes.includes(type)
+                                    return (
+                                        <button key={type} onClick={() => toggleType(type)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${isSelected ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                            {type} {isSelected && <Check size={12} />}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                            <span>{filteredProperties.length} results</span>
+                            {(minPrice || maxPrice || selectedTypes.length > 0) && (
+                                <button onClick={() => { setMinPrice(''); setMaxPrice(''); setSelectedTypes([]) }} className="text-red-400 hover:text-red-500">Reset All</button>
+                            )}
+                        </div>
+                    </div>
+                )}
                 
                 {filteredProperties.length === 0 ? (
                     <div className="text-center py-12 text-slate-400 text-sm bg-white rounded-[1.5rem] border border-dashed border-slate-200">
-                        No properties match this filter.
+                        No properties match your filter.
                     </div>
                 ) : (
                     filteredProperties.map((prop) => (
                         <div key={prop.id} className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 group">
                             <div className="relative h-48 w-full rounded-2xl overflow-hidden bg-slate-100 mb-3">
                                 <img src={prop.image_url} alt="Property" className="w-full h-full object-cover" />
-                                <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.price}</span>
+                                <div className="absolute top-3 left-3 flex gap-1">
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-white/90 text-slate-700 backdrop-blur-sm">{prop.price}</span>
+                                    {prop.property_type && <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm bg-black/60 text-white backdrop-blur-sm">{prop.property_type}</span>}
+                                </div>
                                 {prop.images && prop.images.length > 1 && (
                                     <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded-lg text-[10px] font-bold backdrop-blur-sm flex items-center gap-1"><ImageIcon size={10} /> +{prop.images.length - 1}</div>
                                 )}
@@ -210,7 +249,7 @@ export default function PublicProfilePage() {
                             <div className="px-1">
                                 <h3 className="text-lg font-bold text-slate-800">{prop.title}</h3>
                                 <div className="flex items-center gap-1.5 text-slate-500 mt-1 mb-3"><MapPin size={14} /><span className="text-xs font-medium truncate">{prop.address}</span></div>
-                                <a href={`https://wa.me/${profile?.contact_number?.replace(/[^0-9]/g,'')}?text=I'm interested in ${prop.title}`} target="_blank" className="block w-full text-center bg-slate-900 text-white py-3 rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all">Contact Agent</a>
+                                <a href={`https://wa.me/${profile?.contact_number?.replace(/[^0-9]/g,'')}?text=I'm interested in ${prop.title} (${prop.price})`} target="_blank" className="block w-full text-center bg-slate-900 text-white py-3 rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all">Contact Agent</a>
                             </div>
                         </div>
                     ))
@@ -218,11 +257,10 @@ export default function PublicProfilePage() {
             </div>
         )}
 
-        {/* BLOG TAB */}
+        {/* BLOG TAB (Unchanged) */}
         {activeTab === 'blog' && (
             <div className="space-y-4 animate-in fade-in duration-300">
                 <h2 className="font-bold text-slate-700 mb-2">Latest Insights</h2>
-                
                 {posts.length === 0 ? (
                     <div className="text-center py-12 text-slate-400 text-sm bg-white rounded-[1.5rem] border border-dashed border-slate-200">
                         <p>No articles yet.</p>
@@ -258,7 +296,7 @@ export default function PublicProfilePage() {
 
       </div>
 
-      {/* BLOG MODAL */}
+      {/* BLOG MODAL (Unchanged) */}
       {selectedPost && (
         <div className="fixed inset-0 z-[100] bg-white animate-in slide-in-from-bottom-10 overflow-y-auto">
             <div className="relative">
@@ -279,7 +317,6 @@ export default function PublicProfilePage() {
                         <p className="text-xs text-slate-400 mb-6">{new Date(selectedPost.created_at).toLocaleDateString()}</p>
                         
                         <div className="prose prose-sm prose-slate max-w-none">
-                            {/* Simple line break rendering for now */}
                             {selectedPost.content.split('\n').map((paragraph, i) => (
                                 <p key={i} className="mb-4 text-slate-600 leading-relaxed">{paragraph}</p>
                             ))}

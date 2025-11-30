@@ -228,6 +228,7 @@ export type Database = {
           image_url: string | null
           images: string[] | null
           price: string | null
+          property_type: string | null
           status: string | null
           title: string | null
           user_id: string
@@ -240,6 +241,7 @@ export type Database = {
           image_url?: string | null
           images?: string[] | null
           price?: string | null
+          property_type?: string | null
           status?: string | null
           title?: string | null
           user_id: string
@@ -252,6 +254,7 @@ export type Database = {
           image_url?: string | null
           images?: string[] | null
           price?: string | null
+          property_type?: string | null
           status?: string | null
           title?: string | null
           user_id?: string
@@ -281,6 +284,7 @@ export type Database = {
           image_url: string | null
           images: string[] | null
           price: string | null
+          property_type: string | null
           status: string | null
           title: string | null
           user_id: string
