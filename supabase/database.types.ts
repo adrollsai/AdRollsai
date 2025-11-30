@@ -161,11 +161,14 @@ export type Database = {
           created_at: string
           email: string | null
           facebook_token: string | null
+          facebook_url: string | null
           google_business_location_id: string | null
           google_business_refresh_token: string | null
           google_business_token: string | null
           id: string
+          instagram_url: string | null
           linkedin_token: string | null
+          linkedin_url: string | null
           linkedin_urn: string | null
           logo_url: string | null
           mission_statement: string | null
@@ -174,6 +177,7 @@ export type Database = {
           selected_page_token: string | null
           youtube_refresh_token: string | null
           youtube_token: string | null
+          youtube_url: string | null
         }
         Insert: {
           brand_color?: string | null
@@ -182,11 +186,14 @@ export type Database = {
           created_at?: string
           email?: string | null
           facebook_token?: string | null
+          facebook_url?: string | null
           google_business_location_id?: string | null
           google_business_refresh_token?: string | null
           google_business_token?: string | null
           id: string
+          instagram_url?: string | null
           linkedin_token?: string | null
+          linkedin_url?: string | null
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
@@ -195,6 +202,7 @@ export type Database = {
           selected_page_token?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
+          youtube_url?: string | null
         }
         Update: {
           brand_color?: string | null
@@ -203,11 +211,14 @@ export type Database = {
           created_at?: string
           email?: string | null
           facebook_token?: string | null
+          facebook_url?: string | null
           google_business_location_id?: string | null
           google_business_refresh_token?: string | null
           google_business_token?: string | null
           id?: string
+          instagram_url?: string | null
           linkedin_token?: string | null
+          linkedin_url?: string | null
           linkedin_urn?: string | null
           logo_url?: string | null
           mission_statement?: string | null
@@ -216,6 +227,7 @@ export type Database = {
           selected_page_token?: string | null
           youtube_refresh_token?: string | null
           youtube_token?: string | null
+          youtube_url?: string | null
         }
         Relationships: []
       }

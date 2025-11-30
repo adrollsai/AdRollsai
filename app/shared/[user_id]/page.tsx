@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams, usePathname } from 'next/navigation'
-import { MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, BookOpen, ChevronRight, X, Filter, Check } from 'lucide-react'
+import { MapPin, Phone, Loader2, Image as ImageIcon, LayoutGrid, BookOpen, ChevronRight, X, Filter, Check, Facebook, Instagram, Linkedin, Youtube } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
-// --- Types ---
+// ... (Keep existing Types and Helpers) ...
 type Property = {
   id: string
   title: string
@@ -30,7 +30,6 @@ type Post = {
 
 const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots']
 
-// --- Helper: Price Parser ---
 const parsePrice = (priceStr: string | null) => {
   if (!priceStr) return 0
   const numbersOnly = priceStr.replace(/[^0-9]/g, '')
@@ -52,11 +51,9 @@ export default function PublicProfilePage() {
   const [profile, setProfile] = useState<any>(null)
   const [properties, setProperties] = useState<Property[]>([])
   const [posts, setPosts] = useState<Post[]>([])
-  
-  // Selection
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
 
-  // FILTER STATE (Interactive)
+  // Filters
   const [showFilters, setShowFilters] = useState(false)
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
@@ -65,7 +62,7 @@ export default function PublicProfilePage() {
   // --- 1. ID EXTRACTION ---
   const getSafeUserId = () => {
     if (params?.userId) return params.userId as string
-    if (params?.id) return params.id as string // Next 15+ handling
+    if (params?.id) return params.id as string
     if (params && Object.keys(params).length > 0) return Object.values(params)[0] as string
     return null
   }
@@ -74,14 +71,10 @@ export default function PublicProfilePage() {
   useEffect(() => {
     const userId = getSafeUserId()
     
-    // Initialize filters from URL if present
-    const urlMin = searchParams.get('min')
-    const urlMax = searchParams.get('max')
-    const urlTypes = searchParams.get('types')
-    
-    if (urlMin) setMinPrice(urlMin)
-    if (urlMax) setMaxPrice(urlMax)
-    if (urlTypes) setSelectedTypes(urlTypes.split(','))
+    // Init filters
+    const urlMin = searchParams.get('min'); if(urlMin) setMinPrice(urlMin)
+    const urlMax = searchParams.get('max'); if(urlMax) setMaxPrice(urlMax)
+    const urlTypes = searchParams.get('types'); if(urlTypes) setSelectedTypes(urlTypes.split(','))
 
     if (!userId) {
         setErrorMsg("Invalid Page Link")
@@ -116,9 +109,8 @@ export default function PublicProfilePage() {
           setLoading(false)
       }
     }
-
     fetchData()
-  }, []) // Run once on mount
+  }, [])
 
   // --- 3. FILTER LOGIC ---
   const toggleType = (type: string) => {
@@ -129,17 +121,11 @@ export default function PublicProfilePage() {
     const priceVal = parsePrice(p.price)
     const min = minPrice ? parseInt(minPrice) : 0
     const max = maxPrice ? parseInt(maxPrice) : Infinity
-    
-    // Type Filter
     const matchesType = selectedTypes.length === 0 || (p.property_type && selectedTypes.includes(p.property_type))
-    
-    // Price Filter
     const matchesPrice = priceVal >= min && priceVal <= max
-    
     return matchesPrice && matchesType
   })
 
-  // --- RENDER ---
   if (loading) return <div className="flex h-screen items-center justify-center text-slate-400 bg-slate-50"><Loader2 className="animate-spin" /></div>
   if (errorMsg) return <div className="flex h-screen items-center justify-center text-slate-400"><p>{errorMsg}</p></div>
 
@@ -149,7 +135,7 @@ export default function PublicProfilePage() {
       {/* HEADER */}
       <div className="bg-white px-6 pt-8 pb-6 shadow-sm border-b border-slate-100">
         <div className="max-w-md mx-auto">
-            <div className="flex items-center gap-4 mb-6">
+            <div className="flex items-center gap-4 mb-4">
                 {profile?.logo_url ? (
                     <img src={profile.logo_url} className="w-16 h-16 rounded-full object-cover border border-slate-100 shadow-sm" alt="Logo" />
                 ) : (
@@ -157,7 +143,7 @@ export default function PublicProfilePage() {
                     {profile?.business_name?.[0] || 'A'}
                     </div>
                 )}
-                <div>
+                <div className="flex-1">
                     <h1 className="text-xl font-bold text-slate-900">{profile?.business_name || 'Portfolio'}</h1>
                     {profile?.contact_number && (
                     <a href={`tel:${profile.contact_number}`} className="flex items-center gap-1.5 text-slate-500 text-xs mt-1 hover:text-blue-600 transition-colors">
@@ -165,6 +151,22 @@ export default function PublicProfilePage() {
                     </a>
                     )}
                 </div>
+            </div>
+
+            {/* Social Icons Row */}
+            <div className="flex gap-3 mb-6 pl-1">
+                {profile?.facebook_url && (
+                    <a href={profile.facebook_url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-[#1877F2] transition-colors"><Facebook size={20} /></a>
+                )}
+                {profile?.instagram_url && (
+                    <a href={profile.instagram_url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-[#E4405F] transition-colors"><Instagram size={20} /></a>
+                )}
+                {profile?.linkedin_url && (
+                    <a href={profile.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-[#0077b5] transition-colors"><Linkedin size={20} /></a>
+                )}
+                {profile?.youtube_url && (
+                    <a href={profile.youtube_url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-[#FF0000] transition-colors"><Youtube size={20} /></a>
+                )}
             </div>
 
             {/* TABS */}
@@ -179,14 +181,11 @@ export default function PublicProfilePage() {
         </div>
       </div>
 
-      {/* CONTENT AREA */}
+      {/* CONTENT AREA (Inventory & Blog Rendering - Unchanged) */}
       <div className="max-w-md mx-auto px-5 py-6">
         
-        {/* INVENTORY TAB */}
         {activeTab === 'inventory' && (
             <div className="space-y-4 animate-in fade-in duration-300">
-                
-                {/* Filters Header */}
                 <div className="flex justify-between items-end mb-2">
                     <h2 className="font-bold text-slate-700">Available Properties</h2>
                     <button onClick={() => setShowFilters(!showFilters)} className={`p-2 rounded-lg flex items-center gap-1.5 text-xs font-bold transition-colors ${showFilters ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
@@ -194,7 +193,6 @@ export default function PublicProfilePage() {
                     </button>
                 </div>
 
-                {/* Filter Controls (Collapsible) */}
                 {showFilters && (
                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 animate-in slide-in-from-top-2 space-y-3">
                         <div className="flex gap-3">
@@ -257,7 +255,7 @@ export default function PublicProfilePage() {
             </div>
         )}
 
-        {/* BLOG TAB (Unchanged) */}
+        {/* BLOG TAB */}
         {activeTab === 'blog' && (
             <div className="space-y-4 animate-in fade-in duration-300">
                 <h2 className="font-bold text-slate-700 mb-2">Latest Insights</h2>
@@ -296,7 +294,7 @@ export default function PublicProfilePage() {
 
       </div>
 
-      {/* BLOG MODAL (Unchanged) */}
+      {/* BLOG MODAL */}
       {selectedPost && (
         <div className="fixed inset-0 z-[100] bg-white animate-in slide-in-from-bottom-10 overflow-y-auto">
             <div className="relative">
@@ -309,13 +307,11 @@ export default function PublicProfilePage() {
                 <button onClick={() => setSelectedPost(null)} className="absolute top-4 right-4 bg-black/20 backdrop-blur-md text-white p-2 rounded-full hover:bg-black/40 transition-colors z-20">
                     <X size={20} />
                 </button>
-                
                 <div className="max-w-md mx-auto px-6 -mt-12 relative z-10">
                     <div className="bg-white rounded-t-[2rem] p-6 min-h-screen shadow-lg">
                         <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-6" />
                         <h1 className="text-2xl font-bold text-slate-900 mb-2 leading-tight">{selectedPost.title}</h1>
                         <p className="text-xs text-slate-400 mb-6">{new Date(selectedPost.created_at).toLocaleDateString()}</p>
-                        
                         <div className="prose prose-sm prose-slate max-w-none">
                             {selectedPost.content.split('\n').map((paragraph, i) => (
                                 <p key={i} className="mb-4 text-slate-600 leading-relaxed">{paragraph}</p>

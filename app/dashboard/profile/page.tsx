@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube } from 'lucide-react'
+import { CreditCard, LogOut, ChevronRight, Save, Upload, Loader2, Facebook, Linkedin, CheckCircle, Youtube, Instagram, Globe } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -35,13 +35,17 @@ export default function ProfilePage() {
   const [selectedPageId, setSelectedPageId] = useState<string>('')
   const [isLoadingPages, setIsLoadingPages] = useState(false)
 
-  // Profile Data
+  // Profile Data (Updated with Social URLs)
   const [formData, setFormData] = useState({
     businessName: '',
     mission: '',
     color: '#D0E8FF',
     contact: '',
-    logoUrl: ''
+    logoUrl: '',
+    facebookUrl: '',
+    instagramUrl: '',
+    linkedinUrl: '',
+    youtubeUrl: ''
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -115,7 +119,11 @@ export default function ProfilePage() {
             mission: profile.mission_statement || '',
             color: profile.brand_color || '#D0E8FF',
             contact: profile.contact_number || '',
-            logoUrl: profile.logo_url || ''
+            logoUrl: profile.logo_url || '',
+            facebookUrl: profile.facebook_url || '',
+            instagramUrl: profile.instagram_url || '',
+            linkedinUrl: profile.linkedin_url || '',
+            youtubeUrl: profile.youtube_url || ''
           })
           
           // Facebook
@@ -301,7 +309,12 @@ export default function ProfilePage() {
         mission_statement: formData.mission,
         brand_color: formData.color,
         contact_number: formData.contact,
-        logo_url: formData.logoUrl 
+        logo_url: formData.logoUrl,
+        // Save new social URLs
+        facebook_url: formData.facebookUrl,
+        instagram_url: formData.instagramUrl,
+        linkedin_url: formData.linkedinUrl,
+        youtube_url: formData.youtubeUrl
       })
 
     if (error) alert(`Error saving: ${error.message}`)
@@ -433,13 +446,39 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* AI Form */}
+      {/* Business Profile Form */}
       <div className="mb-6">
-        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI Knowledge Base</h3>
+        <h3 className="ml-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Business Profile</h3>
         <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-blue-100 space-y-4">
+            
+            {/* Basic Info */}
             <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Business Name</label><input type="text" value={formData.businessName} onChange={(e) => setFormData({...formData, businessName: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
             <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Contact Number</label><input type="tel" value={formData.contact} onChange={(e) => setFormData({...formData, contact: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm font-medium focus:ring-2 focus:ring-primary outline-none" /></div>
-            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Mission / Info</label><textarea rows={3} value={formData.mission} onChange={(e) => setFormData({...formData, mission: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm resize-none focus:ring-2 focus:ring-primary outline-none" /></div>
+            
+            {/* Social Links Section */}
+            <div className="pt-4 border-t border-slate-50 mt-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase mb-3 block">Public Social Links</label>
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <div className="bg-blue-50 p-2 rounded-lg text-blue-600 flex-shrink-0"><Facebook size={16} /></div>
+                        <input type="text" placeholder="https://facebook.com/..." value={formData.facebookUrl} onChange={(e) => setFormData({...formData, facebookUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="bg-pink-50 p-2 rounded-lg text-pink-600 flex-shrink-0"><Instagram size={16} /></div>
+                        <input type="text" placeholder="https://instagram.com/..." value={formData.instagramUrl} onChange={(e) => setFormData({...formData, instagramUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="bg-blue-50 p-2 rounded-lg text-[#0077b5] flex-shrink-0"><Linkedin size={16} /></div>
+                        <input type="text" placeholder="https://linkedin.com/in/..." value={formData.linkedinUrl} onChange={(e) => setFormData({...formData, linkedinUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="bg-red-50 p-2 rounded-lg text-red-600 flex-shrink-0"><Youtube size={16} /></div>
+                        <input type="text" placeholder="https://youtube.com/@..." value={formData.youtubeUrl} onChange={(e) => setFormData({...formData, youtubeUrl: e.target.value})} className="w-full bg-slate-50 py-2.5 px-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                </div>
+            </div>
+
+            <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1 mt-2">Mission / Info</label><textarea rows={3} value={formData.mission} onChange={(e) => setFormData({...formData, mission: e.target.value})} className="w-full bg-slate-50 py-3 px-4 rounded-xl text-slate-800 text-sm resize-none focus:ring-2 focus:ring-primary outline-none" /></div>
             <div><label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Brand Color</label><div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl"><div className="w-6 h-6 rounded-md shadow-sm border border-slate-200" style={{ backgroundColor: formData.color }} /><input type="text" value={formData.color} onChange={(e) => setFormData({...formData, color: e.target.value})} className="bg-transparent font-mono text-xs w-full outline-none uppercase" /></div></div>
             <button onClick={handleSave} disabled={isSaving || uploadingLogo} className="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-70">{isSaving ? 'Saving...' : ( <><Save size={16} /> Save Business Info</> )}</button>
         </div>
