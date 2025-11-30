@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter, Download, Facebook, Instagram, X, Loader2 } from 'lucide-react'
+import { Filter, Download, Facebook, Instagram, X, Loader2, Globe, Linkedin } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 type Asset = {
@@ -46,7 +46,6 @@ export default function AssetsPage() {
   const handlePostFacebook = async () => {
     if (!selectedAsset) return
     setIsPosting(true)
-
     try {
       const response = await fetch('/api/post-social', {
         method: 'POST',
@@ -56,27 +55,16 @@ export default function AssetsPage() {
           caption: caption || 'Check out this new listing! 🏡 #RealEstate'
         })
       })
-
       const data = await response.json()
-
-      if (response.ok) {
-        alert('Successfully posted to Facebook Page!')
-        setSelectedAsset(null) // Close modal
-      } else {
-        alert('Error: ' + (data.error || 'Failed to post'))
-      }
-    } catch (e) {
-      alert('Network error')
-    } finally {
-      setIsPosting(false)
-    }
+      if (response.ok) { alert('Successfully posted to Facebook Page!'); setSelectedAsset(null) } 
+      else { alert('Error: ' + (data.error || 'Failed to post')) }
+    } catch (e) { alert('Network error') } finally { setIsPosting(false) }
   }
 
   // 3. Handle Post to Instagram
   const handlePostInstagram = async () => {
     if (!selectedAsset) return
     setIsPosting(true)
-
     try {
       const response = await fetch('/api/post-instagram', {
         method: 'POST',
@@ -86,155 +74,159 @@ export default function AssetsPage() {
           caption: caption || 'Created with AI ✨ #RealEstate'
         })
       })
+      const data = await response.json()
+      if (response.ok) { alert('Successfully posted to Instagram!'); setSelectedAsset(null) } 
+      else { alert('Error: ' + (data.error || 'Failed to post')) }
+    } catch (e) { alert('Network error') } finally { setIsPosting(false) }
+  }
+
+  // 4. Handle Post to LinkedIn
+  const handlePostLinkedin = async () => {
+    if (!selectedAsset) return
+    setIsPosting(true)
+    try {
+      const response = await fetch('/api/post-linkedin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: selectedAsset.url,
+          caption: caption || 'Check this out! 🚀'
+        })
+      })
+      const data = await response.json()
+      if (response.ok) { alert('Successfully posted to LinkedIn!'); setSelectedAsset(null) } 
+      else { alert('Error: ' + (data.error || 'Failed to post')) }
+    } catch (e) { alert('Network error') } finally { setIsPosting(false) }
+  }
+
+  // Helper for Dimensions
+  const getImageDimensions = (url: string): Promise<{ width: number, height: number, ratio: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve({ width: img.width, height: img.height, ratio: img.width / img.height })
+      img.onerror = () => reject(new Error(`Failed to load image.`))
+      img.src = url
+    })
+  }
+
+  // 5. Handle Universal Post
+  const handleUniversalPost = async () => {
+    if (!selectedAsset) return
+    setIsPosting(true)
+
+    let targets = ['facebook', 'instagram', 'linkedin'] 
+
+    try {
+      // Dimension Check for IG
+      if (selectedAsset.type === 'image') {
+        const { ratio } = await getImageDimensions(selectedAsset.url)
+        const isIgSafe = ratio >= 0.8 && ratio <= 1.91
+        
+        if (!isIgSafe) {
+          const proceed = confirm(`⚠️ DIMENSION WARNING\n\nAspect Ratio: ${ratio.toFixed(2)}.\nInstagram Feed supports 0.8 to 1.91.\n\nSkip Instagram and post to FB & LinkedIn?`)
+          if (proceed) { targets = targets.filter(t => t !== 'instagram') } 
+          else { setIsPosting(false); return }
+        }
+      }
+
+      const response = await fetch('/api/post-universal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: selectedAsset.url,
+          caption: caption || 'Automated Post via AdRolls AI 🚀',
+          platforms: targets
+        })
+      })
 
       const data = await response.json()
-
+      
       if (response.ok) {
-        alert('Successfully posted to Instagram!')
+        alert(`Broadcast Complete! \n\n${JSON.stringify(data.results, null, 2)}`)
         setSelectedAsset(null)
       } else {
-        alert('Error: ' + (data.error || 'Failed to post. Is your Instagram linked?'))
+        alert('Partial Error: ' + JSON.stringify(data))
       }
-    } catch (e) {
-      alert('Network error')
+
+    } catch (error: any) {
+      console.error(error)
+      alert(error.message || 'Failed.')
     } finally {
       setIsPosting(false)
     }
   }
 
-  const filteredAssets = activeFilter === 'All' 
-    ? assets 
-    : assets.filter(asset => asset.type === activeFilter)
+  const filteredAssets = activeFilter === 'All' ? assets : assets.filter(asset => asset.type === activeFilter)
 
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen relative">
-      
-      {/* Header */}
       <div className="flex justify-between items-end mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Library</h1>
-          <p className="text-slate-500 text-xs mt-1">Your marketing assets</p>
-        </div>
-        <div className="p-2.5 bg-white text-slate-700 rounded-full shadow-sm border border-slate-100">
-          <Filter size={18} />
-        </div>
+        <div><h1 className="text-2xl font-bold text-slate-900">Library</h1><p className="text-slate-500 text-xs mt-1">Your marketing assets</p></div>
+        <div className="p-2.5 bg-white text-slate-700 rounded-full shadow-sm border border-slate-100"><Filter size={18} /></div>
       </div>
 
-      {/* Filter Chips */}
       <div className="flex gap-2 overflow-x-auto pb-5 -mx-5 px-5 scrollbar-hide">
         {filters.map((filter) => (
-          <button
-            key={filter}
-            onClick={() => setActiveFilter(filter)}
-            className={`
-              capitalize whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border
-              ${activeFilter === filter 
-                ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
-                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}
-            `}
-          >
-            {filter === 'image' ? 'Images' : filter === 'video' ? 'Videos' : filter}
-          </button>
+          <button key={filter} onClick={() => setActiveFilter(filter)} className={`capitalize whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border ${activeFilter === filter ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>{filter === 'image' ? 'Images' : filter === 'video' ? 'Videos' : filter}</button>
         ))}
       </div>
 
-      {/* Grid */}
       {loading ? (
-        <div className="flex justify-center py-20 text-slate-400">
-          <Loader2 size={24} className="animate-spin" />
-        </div>
+        <div className="flex justify-center py-20 text-slate-400"><Loader2 size={24} className="animate-spin" /></div>
       ) : (
         <div className="grid grid-cols-3 gap-1.5 mb-24">
           {filteredAssets.map((asset) => (
-            <div 
-              key={asset.id} 
-              onClick={() => setSelectedAsset(asset)} // Open Modal on Click
-              className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 group cursor-pointer active:scale-95 transition-transform"
-            >
-              <img 
-                src={asset.url} 
-                alt="Asset" 
-                className="w-full h-full object-cover"
-              />
-              <div className={`
-                absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white
-                ${asset.status === 'Published' ? 'bg-green-400' : 'bg-amber-400'}
-              `} />
+            <div key={asset.id} onClick={() => setSelectedAsset(asset)} className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 group cursor-pointer active:scale-95 transition-transform">
+              <img src={asset.url} alt="Asset" className="w-full h-full object-cover" />
+              <div className={`absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${asset.status === 'Published' ? 'bg-green-400' : 'bg-amber-400'}`} />
             </div>
           ))}
         </div>
       )}
 
-      {/* --- POSTING MODAL --- */}
       {selectedAsset && (
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl animate-in zoom-in-95 duration-200">
-            
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-5 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-slate-800">Share Asset</h2>
-              <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors">
-                <X size={20} />
-              </button>
+              <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
             </div>
 
-            {/* Image Preview */}
             <div className="rounded-2xl overflow-hidden bg-slate-100 mb-4 border border-slate-100">
                <img src={selectedAsset.url} className="w-full max-h-[300px] object-contain" alt="Preview" />
             </div>
 
-            {/* Caption Input */}
             <div className="mb-4">
               <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1">Caption</label>
-              <textarea 
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                placeholder="Write a caption..."
-                className="w-full bg-slate-50 p-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none resize-none"
-                rows={2}
-              />
+              <textarea value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Write a caption..." className="w-full bg-slate-50 p-3 rounded-xl text-sm focus:ring-2 focus:ring-primary outline-none resize-none" rows={2} />
             </div>
 
-            {/* Action Buttons */}
             <div className="flex flex-col gap-3">
-               
-               {/* Row 1: Social Buttons */}
-               <div className="flex gap-3">
-                 <button 
-                   onClick={handlePostFacebook}
-                   disabled={isPosting}
-                   className="flex-1 bg-[#1877F2] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform hover:bg-[#166fe5]"
-                 >
+               {/* Socials Grid */}
+               <div className="flex gap-2">
+                 <button onClick={handlePostFacebook} disabled={isPosting} className="flex-1 bg-[#1877F2] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#166fe5]">
                    {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Facebook size={16} fill="white" />}
-                   Facebook
                  </button>
-
-                 <button 
-                   onClick={handlePostInstagram}
-                   disabled={isPosting}
-                   className="flex-1 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform hover:opacity-90"
-                 >
+                 <button onClick={handlePostInstagram} disabled={isPosting} className="flex-1 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90">
                    {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Instagram size={16} />}
-                   Instagram
+                 </button>
+                 <button onClick={handlePostLinkedin} disabled={isPosting} className="flex-1 bg-[#0077b5] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#006097]">
+                   {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Linkedin size={16} fill="white" />}
                  </button>
                </div>
 
-               {/* Row 2: Download Button */}
-               <a 
-                 href={selectedAsset.url} 
-                 download="asset.png"
-                 target="_blank"
-                 rel="noopener noreferrer"
-                 className="w-full bg-slate-100 text-slate-700 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors"
-               >
-                 <Download size={14} />
-                 Download High-Res
+               <button onClick={handleUniversalPost} disabled={isPosting} className="w-full bg-slate-800 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:bg-slate-900">
+                 {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
+                 Post Everywhere
+               </button>
+
+               <a href={selectedAsset.url} download="asset.png" target="_blank" rel="noopener noreferrer" className="w-full bg-slate-100 text-slate-700 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
+                 <Download size={14} /> Download High-Res
                </a>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   )
 }
