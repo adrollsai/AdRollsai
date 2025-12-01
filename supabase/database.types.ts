@@ -117,6 +117,93 @@ export type Database = {
         }
         Relationships: []
       }
+      deal_requirements: {
+        Row: {
+          budget_range: string | null
+          created_at: string
+          description: string | null
+          id: string
+          location: string
+          property_type: string
+          status: string
+          title: string
+          urgency: string | null
+          user_id: string
+        }
+        Insert: {
+          budget_range?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          location: string
+          property_type: string
+          status?: string
+          title: string
+          urgency?: string | null
+          user_id: string
+        }
+        Update: {
+          budget_range?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          location?: string
+          property_type?: string
+          status?: string
+          title?: string
+          urgency?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      external_listings: {
+        Row: {
+          confidence_score: number | null
+          contact_info: Json | null
+          created_at: string
+          description: string | null
+          id: string
+          image_url: string | null
+          is_claimed: boolean | null
+          location: string | null
+          price: string | null
+          property_type: string | null
+          source_platform: string
+          source_url: string
+          title: string
+        }
+        Insert: {
+          confidence_score?: number | null
+          contact_info?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_claimed?: boolean | null
+          location?: string | null
+          price?: string | null
+          property_type?: string | null
+          source_platform: string
+          source_url: string
+          title: string
+        }
+        Update: {
+          confidence_score?: number | null
+          contact_info?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_claimed?: boolean | null
+          location?: string | null
+          price?: string | null
+          property_type?: string | null
+          source_platform?: string
+          source_url?: string
+          title?: string
+        }
+        Relationships: []
+      }
       posts: {
         Row: {
           content: string | null

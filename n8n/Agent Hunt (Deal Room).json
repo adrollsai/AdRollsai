@@ -1,0 +1,296 @@
+{
+  "name": "Agent Hunt (Deal Room)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agent-hunt",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        0
+      ],
+      "id": "9870aa91-c90d-4e34-8450-dbba888c0a4a",
+      "name": "Listen for Needs",
+      "webhookId": "550ebd62-3679-4ad1-8c0a-ca99ea1fc073"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "b7cf18104f5163332b90dec4c3ada6b64a3bcf64"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.body.searchQuery }} site:facebook.com OR site:linkedin.com OR site:99acres.com -inurl:login"
+            },
+            {
+              "name": "num",
+              "value": "10"
+            },
+            {
+              "name": "tbs",
+              "value": "qdr:w"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "9e64bfce-c338-4931-bb40-e0d0817f705b",
+      "name": "Search Web (Serper)"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a Real Estate Data Assistant.\n\nI will provide you with raw search results for a property requirement: \"{{ $('Listen for Needs').item.json.body.searchQuery }}\"\n\nYOUR TASK:\nAnalyze the search snippets below and extract valid property listings.\nIgnore generic landing pages or ads. Focus on specific listings.\n\nSEARCH RESULTS:\n{{ JSON.stringify($json) }}\n\nOUTPUT FORMAT:\nReturn ONLY a JSON array. Do not include markdown formatting like ```json.\n\n[\n  {\n    \"title\": \"3 BHK Flat in Sector 82\",\n    \"description\": \"Full description from snippet...\",\n    \"location\": \"Mohali Sector 82\",\n    \"price\": \"1.25 Cr\",\n    \"source_url\": \"https://...\",\n    \"source_platform\": \"Facebook\",\n    \"confidence_score\": 0.9,\n    \"contact_info\": { \n        \"phone\": \"9876543210\", \n        \"email\": \"example@gmail.com\" \n    }\n  }\n]\n\nIMPORTANT:\n- If you see a phone number in the snippet, extract it into \"contact_info.phone\".\n- If no phone is found, leave \"phone\" as null."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        400,
+        0
+      ],
+      "id": "0d6e480f-407d-4d75-bda5-212681d7de85",
+      "name": "Gemini Parser",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "3WrGUVI5KHmfX2TL",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the string output from Gemini into actual JSON object\nconst rawText = $input.first().json.content.parts[0].text;\nlet cleanJson;\n\ntry {\n  // Remove any markdown code block syntax if Gemini added it\n  const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\n  cleanJson = JSON.parse(cleanText);\n} catch (e) {\n  cleanJson = [];\n}\n\n// Return each listing as a separate item for the next node\nreturn cleanJson.map(item => ({ json: item }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        0
+      ],
+      "id": "1ae3efc3-e131-45db-af4e-d7b39cd8b769",
+      "name": "Format JSON"
+    },
+    {
+      "parameters": {
+        "tableId": "external_listings",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $json.title }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "location",
+              "fieldValue": "={{ $json.location }}"
+            },
+            {
+              "fieldId": "price",
+              "fieldValue": "={{ $json.price }}"
+            },
+            {
+              "fieldId": "source_url",
+              "fieldValue": "={{ $json.source_url }}"
+            },
+            {
+              "fieldId": "source_platform",
+              "fieldValue": "={{ $json.source_platform }}"
+            },
+            {
+              "fieldId": "confidence_score",
+              "fieldValue": "={{ $json.confidence_score }}"
+            },
+            {
+              "fieldId": "property_type",
+              "fieldValue": "Unknown"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        960,
+        0
+      ],
+      "id": "51d9b10b-2ccc-460f-91a1-29138a208b16",
+      "name": "Save to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "UgnuxpCJwLormMKp",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"matches_found\": {{ $input.all().length }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1216,
+        0
+      ],
+      "id": "9d89f1f2-0861-4d85-84bd-c5b4e59c2ca9",
+      "name": "Respond"
+    }
+  ],
+  "pinData": {
+    "Listen for Needs": [
+      {
+        "json": {
+          "headers": {
+            "host": "adrollsai13.app.n8n.cloud",
+            "user-agent": "node",
+            "content-length": "291",
+            "accept": "*/*",
+            "accept-encoding": "gzip, br",
+            "accept-language": "*",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "2401:4900:1c2b:d830:b576:cf06:cf9f:3477",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "IN",
+            "cf-ray": "9a71f57e16ae257c-CCU",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "sec-fetch-mode": "cors",
+            "x-forwarded-for": "2401:4900:1c2b:d830:b576:cf06:cf9f:3477, 172.68.127.203",
+            "x-forwarded-host": "adrollsai13.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-60-78f959c455-qlrwh",
+            "x-is-trusted": "yes",
+            "x-real-ip": "2401:4900:1c2b:d830:b576:cf06:cf9f:3477"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "userId": "b3d9fb26-038b-4505-a3c1-be33e13a8579",
+            "userEmail": "rchopra489@gmail.com",
+            "requirementId": "2d3f69f5-217c-4ad9-b3dc-c31a5d2c289b",
+            "searchQuery": "\"sector 82\" \"Residential\" 3bhk in mohali price 1 cr - 2 cr",
+            "filters": {
+              "location": "sector 82",
+              "minBudget": "1 cr",
+              "maxBudget": "2 cr"
+            }
+          },
+          "webhookUrl": "https://adrollsai13.app.n8n.cloud/webhook-test/agent-hunt",
+          "executionMode": "test"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Listen for Needs": {
+      "main": [
+        [
+          {
+            "node": "Search Web (Serper)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Web (Serper)": {
+      "main": [
+        [
+          {
+            "node": "Gemini Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Parser": {
+      "main": [
+        [
+          {
+            "node": "Format JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format JSON": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "34b7b26c-c866-4147-aad5-eb6325a5c91c",
+  "meta": {
+    "instanceId": "3a51ec9e2b6ba838c197e909ea76dd8dc3b2079d815a88b998ea6ba74887a108"
+  },
+  "id": "fAHQAh86vBXm0NJp",
+  "tags": []
+}
