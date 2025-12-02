@@ -186,37 +186,57 @@ export default function InventoryPage() {
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
     
-    // 1. Prepare the Caption
+    // 1. Prepare Text
     const shareText = `🏡 ${prop.title}\n📍 ${prop.address}\n💰 ${prop.price}\n\n${prop.description || ''}`
 
-    if (navigator.share) {
-      try {
-        // 2. Fetch the image to create a File object
-        const response = await fetch(prop.image_url)
-        const blob = await response.blob()
-        const file = new File([blob], 'property-image.jpg', { type: blob.type })
-
-        // 3. Check if the device allows sharing files
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: prop.title,
-            text: shareText,
-          })
-        } else {
-          // Fallback: Share as Link if files aren't supported
-          await navigator.share({ 
-            title: prop.title, 
-            text: shareText, 
-            url: prop.image_url 
-          })
-        }
-      } catch (error) {
-        console.warn("Share failed or cancelled:", error)
-      }
-    } else {
-      // Fallback for Desktop (WhatsApp Web)
+    // 2. Desktop Fallback (WhatsApp Web)
+    if (!navigator.share) {
       window.open(`https://wa.me/?text=${encodeURIComponent(shareText + "\n" + prop.image_url)}`, '_blank')
+      return
+    }
+
+    // 3. Mobile Native Share (Attempt Image Share)
+    try {
+      // A. Fetch the image
+      const response = await fetch(prop.image_url)
+      const blob = await response.blob()
+      
+      // B. Detect correct extension (Crucial for WhatsApp to accept the file)
+      // blob.type is usually 'image/jpeg' or 'image/png'
+      const mimeType = blob.type
+      const extension = mimeType.split('/')[1] || 'jpeg'
+      
+      // C. Create File Object
+      const file = new File([blob], `property.${extension}`, { type: mimeType })
+
+      // D. Define Share Data with FILES (No URL, so it treats it as a file share)
+      const shareData = {
+        files: [file],
+        title: prop.title,
+        text: shareText
+      }
+
+      // E. Check support and Share
+      if (navigator.canShare && navigator.canShare(shareData)) {
+        await navigator.share(shareData)
+      } else {
+        // F. Fallback if device rejects file sharing: Share Link
+        await navigator.share({
+          title: prop.title,
+          text: shareText,
+          url: prop.image_url
+        })
+      }
+    } catch (error) {
+      console.warn("Image share failed, falling back to link:", error)
+      // G. Final Fallback if fetch fails (e.g. CORS error)
+      try {
+        await navigator.share({
+          title: prop.title,
+          text: shareText,
+          url: prop.image_url
+        })
+      } catch (e) { console.error("Share completely failed", e) }
     }
   }
 
