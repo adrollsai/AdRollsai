@@ -184,7 +184,7 @@ export default function InventoryPage() {
     alert("✅ Link Copied!")
   }
 
-  // --- UPDATED SHARE FUNCTION ---
+  // --- UPDATED SHARE FUNCTION (USES PROXY) ---
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
     e.stopPropagation()
     setSharingId(prop.id)
@@ -201,8 +201,9 @@ export default function InventoryPage() {
 
     // 3. Mobile Native Share (Attempt Image Share)
     try {
-      // A. Fetch image with CORS mode
-      const response = await fetch(prop.image_url, { mode: 'cors' })
+      // 🟢 USE PROXY API to avoid CORS issues
+      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(prop.image_url)}`
+      const response = await fetch(proxyUrl)
       
       if (!response.ok) throw new Error("Image fetch failed")
       
