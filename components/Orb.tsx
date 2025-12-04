@@ -14,24 +14,27 @@ interface OrbProps {
 
 export default function Orb({ isSpeaking, inputAnalyser, outputAnalyser }: OrbProps) {
   const mountRef = useRef<HTMLDivElement>(null)
-  const sceneRef = useRef<any>(null)
+  
+  // Ref for cleanup tracking
+  const sceneRef = useRef<{ renderer: THREE.WebGLRenderer, animationId: number } | null>(null)
 
   useEffect(() => {
-    if (!mountRef.current || sceneRef.current) return;
+    if (!mountRef.current) return
 
     // --- SETUP ---
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050505);
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x050505)
 
-    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
-    camera.position.z = 4;
+    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000)
+    camera.position.z = 4
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    mountRef.current.appendChild(renderer.domElement);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
+    renderer.setPixelRatio(window.devicePixelRatio)
+    mountRef.current.appendChild(renderer.domElement)
 
-    // --- SPHERE WITH CUSTOM SHADER (Ported from SphereShader.ts) ---
-    const geometry = new THREE.IcosahedronGeometry(1.5, 20);
+    // --- ORB ---
+    const geometry = new THREE.IcosahedronGeometry(1.5, 20)
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -45,7 +48,7 @@ export default function Orb({ isSpeaking, inputAnalyser, outputAnalyser }: OrbPr
         varying vec2 vUv;
         varying float vDistort;
         
-        // Simplex Noise
+        // Simplex Noise (Simplified for stability)
         vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -99,10 +102,8 @@ export default function Orb({ isSpeaking, inputAnalyser, outputAnalyser }: OrbPr
 
         void main() {
             vUv = uv;
-            // Combined noise from time + audio input + audio output
             float noise = snoise(position + vec3(uTime));
             float distortion = noise * (0.2 + uInput + uOutput * 2.0);
-            
             vec3 newPos = position + (normal * distortion);
             gl_Position = projectionMatrix * modelViewMatrix * vec4(newPos, 1.0);
             vDistort = distortion;
@@ -110,58 +111,68 @@ export default function Orb({ isSpeaking, inputAnalyser, outputAnalyser }: OrbPr
       `,
       fragmentShader: `
         varying float vDistort;
-        
         void main() {
-            // Blue base, Red highlight when speaking
             vec3 color = mix(vec3(0.1, 0.4, 0.8), vec3(0.9, 0.1, 0.2), vDistort * 2.0);
             gl_FragColor = vec4(color, 1.0);
         }
       `,
       wireframe: true,
       transparent: true
-    });
+    })
 
-    const sphere = new THREE.Mesh(geometry, material);
-    scene.add(sphere);
+    const sphere = new THREE.Mesh(geometry, material)
+    scene.add(sphere)
 
-    // --- POST PROCESSING ---
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85));
+    const composer = new EffectComposer(renderer)
+    composer.addPass(new RenderPass(scene, camera))
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85))
 
-    // --- ANIMATION LOOP ---
-    const dataArray = new Uint8Array(32);
+    const dataArray = new Uint8Array(32)
+    
     const animate = () => {
-        requestAnimationFrame(animate);
+        const id = requestAnimationFrame(animate)
+        if (sceneRef.current) sceneRef.current.animationId = id
+
+        material.uniforms.uTime.value += 0.01
         
-        material.uniforms.uTime.value += 0.01;
-        
-        // Input Audio (Mic)
         if (inputAnalyser) {
-            inputAnalyser.getByteFrequencyData(dataArray);
-            const avg = dataArray[4] / 255; // Low-mid frequency
-            material.uniforms.uInput.value = THREE.MathUtils.lerp(material.uniforms.uInput.value, avg, 0.1);
+            inputAnalyser.getByteFrequencyData(dataArray)
+            material.uniforms.uInput.value = THREE.MathUtils.lerp(material.uniforms.uInput.value, dataArray[4] / 255, 0.1)
         }
-
-        // Output Audio (Bot)
         if (outputAnalyser) {
-            outputAnalyser.getByteFrequencyData(dataArray);
-            const avg = dataArray[4] / 255;
-            material.uniforms.uOutput.value = THREE.MathUtils.lerp(material.uniforms.uOutput.value, avg, 0.1);
+            outputAnalyser.getByteFrequencyData(dataArray)
+            material.uniforms.uOutput.value = THREE.MathUtils.lerp(material.uniforms.uOutput.value, dataArray[4] / 255, 0.1)
         }
 
-        sphere.rotation.y += 0.002;
-        composer.render();
-    };
-    animate();
+        sphere.rotation.y += 0.002
+        composer.render()
+    }
+    
+    animate()
+    
+    // Store cleanup data
+    sceneRef.current = { renderer, animationId: 0 }
 
-    sceneRef.current = { scene, renderer };
+    const handleResize = () => {
+        if (!mountRef.current) return
+        const w = mountRef.current.clientWidth
+        const h = mountRef.current.clientHeight
+        camera.aspect = w / h
+        camera.updateProjectionMatrix()
+        renderer.setSize(w, h)
+        composer.setSize(w, h)
+    }
+    window.addEventListener('resize', handleResize)
 
     return () => {
-        mountRef.current?.removeChild(renderer.domElement);
-        renderer.dispose();
-    };
-  }, [inputAnalyser, outputAnalyser]);
+        window.removeEventListener('resize', handleResize)
+        if (sceneRef.current) {
+            cancelAnimationFrame(sceneRef.current.animationId)
+            sceneRef.current.renderer.dispose()
+            mountRef.current?.removeChild(sceneRef.current.renderer.domElement)
+        }
+    }
+  }, [inputAnalyser, outputAnalyser]) // Depend on analysers to re-bind if they change
 
-  return <div ref={mountRef} className="w-full h-full" />;
+  return <div ref={mountRef} className="w-full h-full" />
 }
