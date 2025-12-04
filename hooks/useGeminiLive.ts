@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 export type Logger = {
   log: (msg: string, type?: 'info' | 'error' | 'success') => void;
@@ -20,44 +20,37 @@ export const useGeminiLive = (apiKey: string) => {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   
-  // Analysers for the Orb
+  // Analysers
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
 
-  // Helper to add logs (throttled slightly in UI by React state batching)
   const addLog = (msg: string, type: 'info' | 'error' | 'success' = 'info') => {
     const time = new Date().toLocaleTimeString().split(' ')[0];
     setLogs(prev => [{ time, msg, type }, ...prev].slice(0, 50)); 
   };
 
   const connect = useCallback(async (systemInstruction: string, tools: any[]) => {
-    if (!apiKey) {
-        addLog("Missing API Key", 'error');
-        return;
-    }
+    if (!apiKey) return alert("API Key required");
 
     try {
-        addLog("Initializing Audio...");
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         
-        // 1. INPUT CONTEXT: Force 16kHz to match Gemini's requirement
-        // The browser will automatically resample your mic (e.g. 48kHz) to this rate.
-        inputContextRef.current = new AudioContextClass({ sampleRate: 16000 });
-        
-        // 2. OUTPUT CONTEXT: Force 24kHz to match Gemini's output
+        // 1. OUTPUT CONTEXT (24kHz for Gemini responses)
         outputContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+        
+        // 2. INPUT CONTEXT (Try 16kHz, but be ready to downsample)
+        inputContextRef.current = new AudioContextClass({ sampleRate: 16000 });
         
         // Setup Visualizers
         inputAnalyserRef.current = inputContextRef.current.createAnalyser();
-        inputAnalyserRef.current.fftSize = 32;
-        inputAnalyserRef.current.smoothingTimeConstant = 0.1;
-        
         outputAnalyserRef.current = outputContextRef.current.createAnalyser();
+        // Optimize analyser for visuals
+        inputAnalyserRef.current.fftSize = 32; 
+        inputAnalyserRef.current.smoothingTimeConstant = 0.5;
         outputAnalyserRef.current.fftSize = 32;
-        outputAnalyserRef.current.smoothingTimeConstant = 0.1;
+        outputAnalyserRef.current.smoothingTimeConstant = 0.5;
 
-        // WebSocket Setup
-        addLog("Connecting to Gemini...");
+        // WebSocket
         const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
         const ws = new WebSocket(url);
         wsRef.current = ws;
@@ -65,7 +58,6 @@ export const useGeminiLive = (apiKey: string) => {
         ws.onopen = () => {
             addLog("Connected! 🟢", 'success');
             setIsConnected(true);
-            // Sync play start time
             nextStartTimeRef.current = outputContextRef.current?.currentTime || 0;
 
             const setupMsg = {
@@ -84,16 +76,9 @@ export const useGeminiLive = (apiKey: string) => {
 
         ws.onmessage = async (event) => {
             try {
-                let textData = "";
-                if (event.data instanceof Blob) {
-                    textData = await event.data.text();
-                } else {
-                    textData = event.data as string;
-                }
-
+                let textData = event.data instanceof Blob ? await event.data.text() : event.data;
                 const data = JSON.parse(textData);
 
-                // Audio Received
                 if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
                     playAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
                     setIsSpeaking(true);
@@ -103,16 +88,9 @@ export const useGeminiLive = (apiKey: string) => {
                     setIsSpeaking(false);
                 }
 
-                if (data.serverContent?.interrupted) {
-                    addLog("User interrupted bot", 'info');
-                    setIsSpeaking(false);
-                    // In a full app, we would clear the audio queue here
-                    // nextStartTimeRef.current = outputContextRef.current?.currentTime || 0;
-                }
-
                 if (data.toolUse) {
                     const call = data.toolUse.functionCalls[0];
-                    addLog(`Tool Called: ${call.name}`, 'success');
+                    addLog(`Tool: ${call.name}`, 'success');
                     ws.send(JSON.stringify({
                         toolResponse: {
                             functionResponses: [{
@@ -123,54 +101,32 @@ export const useGeminiLive = (apiKey: string) => {
                         }
                     }));
                 }
-            } catch (e) {
-                console.error(e);
-            }
+            } catch (e) { console.error(e); }
         };
 
-        ws.onerror = (e) => {
-            addLog("WebSocket Error", 'error');
-            console.error(e);
-            disconnect();
-        };
-
-        ws.onclose = () => {
-            addLog("Disconnected", 'error');
-            disconnect();
-        };
-
+        ws.onclose = () => { setIsConnected(false); };
+        
         await startMicrophone(ws);
 
     } catch (err: any) {
-        addLog(`Setup Failed: ${err.message}`, 'error');
+        addLog(`Error: ${err.message}`, 'error');
         disconnect();
     }
   }, [apiKey]);
 
   const startMicrophone = async (ws: WebSocket) => {
     try {
-        addLog("Opening Microphone...");
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { 
-                echoCancellation: true, 
-                noiseSuppression: true,
-                autoGainControl: true
-            } 
-        });
-        
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStreamRef.current = stream;
         
-        // Ensure context is running (sometimes browsers suspend it)
-        await inputContextRef.current?.resume();
-        await outputContextRef.current?.resume();
-
         const context = inputContextRef.current!;
         const source = context.createMediaStreamSource(stream);
         sourceRef.current = source;
         source.connect(inputAnalyserRef.current!);
 
-        // BUFFER SIZE 256: Critical for low latency (approx 16ms chunks)
-        const processor = context.createScriptProcessor(256, 1, 1);
+        // BUFFER SIZE: 512 (Balance between latency and CPU)
+        // If context.sampleRate is 48k, 512 is ~10ms. If 16k, it's 32ms.
+        const processor = context.createScriptProcessor(512, 1, 1);
         processorRef.current = processor;
 
         processor.onaudioprocess = (e) => {
@@ -178,29 +134,23 @@ export const useGeminiLive = (apiKey: string) => {
 
             const inputData = e.inputBuffer.getChannelData(0);
             
-            // Volume Meter
+            // Visualizer Volume
             let sum = 0;
             for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
             setVolumeLevel(Math.sqrt(sum / inputData.length));
 
-            // Convert Float32 -> PCM16 (Little Endian)
-            // Note: inputData is already 16kHz because we created the context with sampleRate: 16000
-            const pcm16 = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-                const s = Math.max(-1, Math.min(1, inputData[i]));
-                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            // CRITICAL: RESAMPLING
+            // If the browser gave us 48000Hz, we MUST downsample to 16000Hz
+            let pcm16;
+            if (context.sampleRate !== 16000) {
+                const downsampled = downsampleTo16k(inputData, context.sampleRate);
+                pcm16 = floatTo16BitPCM(downsampled);
+            } else {
+                pcm16 = floatTo16BitPCM(inputData);
             }
 
-            // Send base64
-            // Using a more efficient approach than string concatenation for large buffers
-            let binary = '';
-            const bytes = new Uint8Array(pcm16.buffer);
-            const len = bytes.byteLength;
-            for (let i = 0; i < len; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            const base64Audio = window.btoa(binary);
-
+            // Send to Gemini
+            const base64Audio = arrayBufferToBase64(pcm16.buffer);
             ws.send(JSON.stringify({
                 realtimeInput: {
                     mediaChunks: [{ mimeType: "audio/pcm", data: base64Audio }]
@@ -209,7 +159,7 @@ export const useGeminiLive = (apiKey: string) => {
         };
 
         source.connect(processor);
-        processor.connect(context.destination); // Keep graph alive
+        processor.connect(context.destination);
 
     } catch (err: any) {
         addLog(`Mic Error: ${err.message}`, 'error');
@@ -220,16 +170,15 @@ export const useGeminiLive = (apiKey: string) => {
   const playAudio = (base64String: string) => {
     if (!outputContextRef.current) return;
     
-    // Base64 -> Float32 (24kHz)
     const binaryString = window.atob(base64String);
     const len = binaryString.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
     
-    const int16 = new Int16Array(bytes.buffer);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
-        float32[i] = int16[i] / 32768;
+    const float32 = new Float32Array(bytes.length / 2);
+    const dataView = new DataView(bytes.buffer);
+    for (let i = 0; i < bytes.length / 2; i++) {
+        float32[i] = dataView.getInt16(i * 2, true) / 32768;
     }
 
     const buffer = outputContextRef.current.createBuffer(1, float32.length, 24000);
@@ -240,11 +189,8 @@ export const useGeminiLive = (apiKey: string) => {
     source.connect(outputAnalyserRef.current!);
     source.connect(outputContextRef.current.destination);
     
-    // Latency handling: If we fall behind by more than 0.2s, snap to current time
     const now = outputContextRef.current.currentTime;
-    if (nextStartTimeRef.current < now || nextStartTimeRef.current > now + 0.2) {
-        nextStartTimeRef.current = now;
-    }
+    if (nextStartTimeRef.current < now) nextStartTimeRef.current = now;
     
     source.start(nextStartTimeRef.current);
     nextStartTimeRef.current += buffer.duration;
@@ -253,25 +199,48 @@ export const useGeminiLive = (apiKey: string) => {
   const disconnect = useCallback(() => {
     setIsConnected(false);
     setIsSpeaking(false);
-    
     wsRef.current?.close();
     processorRef.current?.disconnect();
     sourceRef.current?.disconnect();
     inputContextRef.current?.close();
     outputContextRef.current?.close();
     mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-    
-    addLog("Session Ended", 'info');
   }, []);
 
   return { 
-    connect, 
-    disconnect, 
-    isConnected, 
-    isSpeaking, 
-    volumeLevel,
-    inputAnalyser: inputAnalyserRef.current,
-    outputAnalyser: outputAnalyserRef.current,
-    logs 
+    connect, disconnect, isConnected, isSpeaking, 
+    volumeLevel, inputAnalyser: inputAnalyserRef.current, 
+    outputAnalyser: outputAnalyserRef.current, logs 
   };
 };
+
+// --- UTILS ---
+
+// Robust Downsampler
+const downsampleTo16k = (buffer: Float32Array, sampleRate: number) => {
+    if (sampleRate === 16000) return buffer;
+    const ratio = sampleRate / 16000;
+    const newLength = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLength);
+    for (let i = 0; i < newLength; i++) {
+        result[i] = buffer[Math.round(i * ratio)];
+    }
+    return result;
+}
+
+const floatTo16BitPCM = (input: Float32Array) => {
+    const output = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return output;
+}
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+    return window.btoa(binary);
+}

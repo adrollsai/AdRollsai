@@ -24,46 +24,50 @@ export default function VoiceAgentPage() {
     inputAnalyser, outputAnalyser, logs 
   } = useGeminiLive(apiKey)
 
-  // FIX: Scroll only the debug container, not the whole page
+  // FIX: Scroll only the debug container
   const logsContainerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (showDebug && logsContainerRef.current) {
-        const el = logsContainerRef.current;
-        el.scrollTop = el.scrollHeight;
+        logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
   }, [logs, showDebug])
 
-  // --- Leads Logic (unchanged) ---
-  const fetchLeads = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
-    setLeads(data || [])
-  }
-  useEffect(() => { fetchLeads() }, [])
+  // Fetch Leads
+  useEffect(() => {
+    const fetchLeads = async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data } = await supabase.from('leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+        setLeads(data || [])
+    }
+    fetchLeads()
+  }, [])
 
   const addDemoLeads = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     await supabase.from('leads').insert([
-        { user_id: user.id, name: 'Sarah Miller', phone: '+1 555-0100', status: 'New', summary: 'Buyer: 2BHK downtown' },
-        { user_id: user.id, name: 'Mike Ross', phone: '+1 555-0199', status: 'New', summary: 'Investor: $2M Budget' }
+        { user_id: user.id, name: 'Sarah Miller', phone: '+1 555-0100', status: 'New', summary: 'Buyer: 2BHK downtown' }
     ])
-    fetchLeads()
+    window.location.reload() // Quick refresh to show data
   }
 
   const handleStartCall = async () => {
     if (!activeLead) return alert("Select a lead first")
     if (!apiKey) return alert("Enter Gemini API Key")
-    const systemPrompt = `You are Alex, calling ${activeLead.name}. Purpose: Qualify for real estate. Ask budget and timeline. Be concise.`
+    
+    // Short, punchy prompt to reduce "thinking" latency
+    const systemPrompt = `You are Alex, calling ${activeLead.name}. Goal: Qualify for real estate. Ask 1 question at a time. Keep it short.`
+    
     const tools = [{ name: "mark_qualified", description: "Lead is good", parameters: { type: "OBJECT", properties: { reason: { type: "STRING" } } } }]
+    
     await connect(systemPrompt, tools)
   }
 
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32 relative bg-surface">
       
-      {/* HEADER */}
+      {/* Header */}
       <div className="mb-4 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-900">Voice AI</h1>
         <div className="flex gap-2">
@@ -74,7 +78,7 @@ export default function VoiceAgentPage() {
         </div>
       </div>
 
-      {/* ORB CARD */}
+      {/* Orb Card */}
       <div className={`relative w-full aspect-square rounded-[2.5rem] shadow-2xl overflow-hidden transition-all duration-500 bg-black`}>
         <div className="absolute inset-0 z-0">
             <OrbVisualizer isSpeaking={isSpeaking} inputAnalyser={inputAnalyser} outputAnalyser={outputAnalyser} />
@@ -123,7 +127,7 @@ export default function VoiceAgentPage() {
         </div>
       )}
 
-      {/* LEADS LIST */}
+      {/* Leads List */}
       <div className="mt-6 space-y-2">
         {leads.length === 0 && (
             <button onClick={addDemoLeads} className="w-full py-4 text-center text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-2xl hover:bg-slate-50 transition-colors">
