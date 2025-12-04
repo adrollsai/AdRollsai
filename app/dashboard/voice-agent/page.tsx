@@ -18,6 +18,7 @@ export default function VoiceAgentPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const [showDebug, setShowDebug] = useState(false)
+  const [loading, setLoading] = useState(true)
   
   const { 
     connect, disconnect, isConnected, isSpeaking, 
@@ -33,15 +34,14 @@ export default function VoiceAgentPage() {
   }, [logs, showDebug])
 
   // Fetch Leads
-  useEffect(() => {
-    const fetchLeads = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        const { data } = await supabase.from('leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
-        setLeads(data || [])
-    }
-    fetchLeads()
-  }, [])
+  const fetchLeads = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase.from('leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+    setLeads(data || [])
+    setLoading(false)
+  }
+  useEffect(() => { fetchLeads() }, [])
 
   const addDemoLeads = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -49,26 +49,25 @@ export default function VoiceAgentPage() {
     await supabase.from('leads').insert([
         { user_id: user.id, name: 'Sarah Miller', phone: '+1 555-0100', status: 'New', summary: 'Buyer: 2BHK downtown' }
     ])
-    window.location.reload() // Quick refresh to show data
+    fetchLeads()
   }
 
   const handleStartCall = async () => {
     if (!activeLead) return alert("Select a lead first")
     if (!apiKey) return alert("Enter Gemini API Key")
     
-    // Updated Prompt: Explicitly enables multilingual support
-    const systemPrompt = `You are Alex, calling ${activeLead.name}. 
-    Goal: Qualify for real estate. Ask budget and timeline.
+    // Explicitly enabling multilingual in the prompt
+    const systemPrompt = `You are Alex, calling ${activeLead.name}. Goal: Qualify for real estate. 
     Rules:
-    1. Be concise (1-2 sentences).
-    2. Speak the user's language if they switch languages.
-    3. Be friendly and natural.`
+    1. Ask budget and timeline.
+    2. Be concise (1-2 sentences).
+    3. Speak the user's language if they start speaking a different language.`
     
     const tools = [{ name: "mark_qualified", description: "Lead is good", parameters: { type: "OBJECT", properties: { reason: { type: "STRING" } } } }]
     
     await connect(systemPrompt, tools)
   }
-  
+
   return (
     <div className="p-5 max-w-md mx-auto min-h-screen pb-32 relative bg-surface">
       
@@ -116,7 +115,10 @@ export default function VoiceAgentPage() {
 
       {/* DEBUG CONSOLE (Fixed Scroll) */}
       {showDebug && (
-        <div ref={logsContainerRef} className="mt-4 p-4 bg-slate-900 rounded-2xl h-48 overflow-y-auto border border-slate-800 shadow-inner">
+        <div 
+            ref={logsContainerRef} 
+            className="mt-4 p-4 bg-slate-900 rounded-2xl h-48 overflow-y-auto border border-slate-800 shadow-inner scroll-smooth"
+        >
             <div className="flex items-center gap-2 mb-2 text-slate-400 text-[10px] uppercase font-bold tracking-wider sticky top-0 bg-slate-900 pb-2">
                 <Activity size={12} /> Live Logs
             </div>
@@ -134,7 +136,7 @@ export default function VoiceAgentPage() {
 
       {/* Leads List */}
       <div className="mt-6 space-y-2">
-        {leads.length === 0 && (
+        {leads.length === 0 && !loading && (
             <button onClick={addDemoLeads} className="w-full py-4 text-center text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-2xl hover:bg-slate-50 transition-colors">
                 Tap to load demo leads
             </button>
