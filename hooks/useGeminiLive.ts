@@ -126,7 +126,7 @@ export const useGeminiLive = (apiKey: string) => {
         source.connect(inputAnalyserRef.current!);
 
         // BUFFER SIZE: 512 is safe for most devices. 256 can cause crackling on slow CPUs.
-        const processor = context.createScriptProcessor(512, 1, 1);
+        const processor = context.createScriptProcessor(256, 1, 1);
         processorRef.current = processor;
 
         processor.onaudioprocess = (e) => {

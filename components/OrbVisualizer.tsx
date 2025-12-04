@@ -39,7 +39,7 @@ export default function OrbVisualizer({ isSpeaking, inputAnalyser, outputAnalyse
     mountRef.current.appendChild(renderer.domElement)
 
     // --- ORB ---
-    const geometry = new THREE.IcosahedronGeometry(1.5, 30)
+    const geometry = new THREE.IcosahedronGeometry(1.5, 10)
     const material = new THREE.ShaderMaterial({
         uniforms: {
             uTime: { value: 0 },
