@@ -1,9 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Mic, PhoneOff, User, Phone, CheckCircle, XCircle, UserPlus, Volume2, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { 
+  Mic, 
+  PhoneOff, 
+  Phone, 
+  RefreshCw, 
+  Trash2, 
+  CheckCircle, 
+  XCircle, 
+  UserPlus, 
+  Volume2, 
+  User 
+} from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+
+// These imports will work once you create the files in Step 4 & 5
 import { useGeminiLive } from '@/hooks/useGeminiLive'
+import OrbVisualizer from '@/components/OrbVisualizer'
 
 type Lead = {
   id: string
@@ -15,13 +29,23 @@ type Lead = {
 
 export default function VoiceAgentPage() {
   const supabase = createClient()
+  
+  // State
   const [apiKey, setApiKey] = useState('') 
   const [leads, setLeads] = useState<Lead[]>([])
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   
-  // Custom Hook
-  const { connect, disconnect, isConnected, isSpeaking, volumeLevel } = useGeminiLive(apiKey)
+  // Custom Hook for Gemini Logic
+  const { 
+    connect, 
+    disconnect, 
+    isConnected, 
+    isSpeaking, 
+    volumeLevel,
+    inputAnalyser,   // Needed for the Orb
+    outputAnalyser   // Needed for the Orb
+  } = useGeminiLive(apiKey)
 
   // 1. Fetch Leads
   const fetchLeads = async () => {
@@ -46,7 +70,7 @@ export default function VoiceAgentPage() {
 
   useEffect(() => { fetchLeads() }, [])
 
-  // 2. Demo Helpers
+  // 2. Add Demo Data (Fixes the "No Leads" issue)
   const addDemoLeads = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -86,7 +110,8 @@ export default function VoiceAgentPage() {
       Be concise. Speak naturally.
       Start by saying: "Hi, is this ${activeLead.name}?"
     `
-    // Tools definition (same as before)
+    
+    // Tools can be expanded later
     const tools = [
         { name: "mark_qualified", description: "Lead has budget/intent", parameters: { type: "OBJECT", properties: { reason: { type: "STRING" } } } },
         { name: "mark_unqualified", description: "Lead not interested", parameters: { type: "OBJECT", properties: { reason: { type: "STRING" } } } }
@@ -122,10 +147,20 @@ export default function VoiceAgentPage() {
       </div>
 
       {/* ACTIVE CALL CARD */}
-      <div className={`relative w-full aspect-square rounded-[2.5rem] shadow-xl overflow-hidden transition-all duration-500 ${isConnected ? 'bg-slate-900 scale-105' : 'bg-white border border-slate-100'}`}>
+      <div className={`relative w-full aspect-square rounded-[2.5rem] shadow-xl overflow-hidden transition-all duration-500 ${isConnected ? 'bg-black scale-105' : 'bg-white border border-slate-100'}`}>
         
-        {/* Status Pill */}
-        <div className="absolute top-6 left-0 right-0 flex justify-center">
+        {/* ORB VISUALIZER LAYER */}
+        <div className="absolute inset-0 z-0">
+            {/* The Orb is always rendered but only reacts when connected */}
+            <OrbVisualizer 
+                isSpeaking={isSpeaking} 
+                inputAnalyser={inputAnalyser} 
+                outputAnalyser={outputAnalyser} 
+            />
+        </div>
+
+        {/* STATUS OVERLAY */}
+        <div className="absolute top-6 left-0 right-0 flex justify-center z-10 pointer-events-none">
             {isConnected ? (
                 <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10 animate-pulse">
                     <div className="w-2 h-2 bg-red-500 rounded-full" />
@@ -139,33 +174,29 @@ export default function VoiceAgentPage() {
             )}
         </div>
 
-        {/* Center Visuals */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-            {isConnected ? (
-                <div className="mb-6 flex items-end gap-1 h-16">
-                    {[1,2,3,4,5].map(i => (
-                        <div key={i} className="w-2 bg-white rounded-full transition-all duration-75" 
-                             style={{ height: `${Math.max(20, Math.random() * volumeLevel * 300)}%` }} />
-                    ))}
-                </div>
-            ) : (
-                <div className="w-28 h-28 bg-slate-50 rounded-full flex items-center justify-center mb-6 border-2 border-dashed border-slate-200">
-                    <User size={40} className="text-slate-300" />
+        {/* INFO OVERLAY */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 pointer-events-none">
+            {!isConnected && (
+                <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-4 border-2 border-dashed border-slate-200">
+                    <User size={32} className="text-slate-300" />
                 </div>
             )}
             
-            <h2 className={`text-2xl font-bold ${isConnected ? 'text-white' : 'text-slate-800'}`}>
+            <h2 className={`text-2xl font-bold transition-colors ${isConnected ? 'text-white drop-shadow-md' : 'text-slate-800'}`}>
                 {activeLead ? activeLead.name : 'Select a Lead'}
             </h2>
-            <p className={`text-sm mt-1 ${isConnected ? 'text-slate-400' : 'text-slate-400'}`}>
-                {activeLead ? activeLead.phone : 'Tap a list item below'}
+            <p className={`text-sm mt-1 transition-colors ${isConnected ? 'text-slate-300 drop-shadow-md' : 'text-slate-400'}`}>
+                {isConnected 
+                  ? (isSpeaking ? "Alex is speaking..." : "Listening...") 
+                  : (activeLead ? activeLead.phone : 'Tap a list item below')
+                }
             </p>
         </div>
 
-        {/* Controls */}
-        <div className="absolute bottom-8 left-0 right-0 px-10 flex justify-between items-center">
+        {/* CONTROLS */}
+        <div className="absolute bottom-8 left-0 right-0 px-10 flex justify-between items-center z-20">
             <button className="p-4 rounded-full bg-slate-100/10 backdrop-blur-sm text-slate-400 hover:bg-slate-100/20 transition-colors">
-                <Volume2 size={22} />
+                <Volume2 size={22} color={isConnected ? "white" : "gray"} />
             </button>
             
             {!isConnected ? (
@@ -186,7 +217,7 @@ export default function VoiceAgentPage() {
             )}
 
             <button className="p-4 rounded-full bg-slate-100/10 backdrop-blur-sm text-slate-400 hover:bg-slate-100/20 transition-colors">
-                <Mic size={22} />
+                <Mic size={22} color={isConnected ? "white" : "gray"} />
             </button>
         </div>
       </div>
