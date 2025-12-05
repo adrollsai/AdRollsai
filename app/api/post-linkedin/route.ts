@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { postToLinkedIn } from '@/utils/social-api'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -10,7 +11,6 @@ export async function POST(request: Request) {
   const body = await request.json()
   const { imageUrl, caption } = body
 
-  // 1. Get Token
   const { data: profile } = await supabase
     .from('profiles')
     .select('linkedin_token')
@@ -18,30 +18,12 @@ export async function POST(request: Request) {
     .single()
 
   if (!profile?.linkedin_token) {
-    return NextResponse.json({ 
-      error: 'No LinkedIn account linked. Please go to Profile settings.' 
-    }, { status: 400 })
+    return NextResponse.json({ error: 'No LinkedIn account linked.' }, { status: 400 })
   }
 
-  // 2. Send to n8n
   try {
-    const n8nResponse = await fetch(process.env.N8N_LINKEDIN_WEBHOOK_URL!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessToken: profile.linkedin_token,
-        imageUrl,
-        caption
-      }),
-    })
-
-    if (!n8nResponse.ok) {
-      const text = await n8nResponse.text()
-      throw new Error(`n8n error: ${text}`)
-    }
-    
-    const result = await n8nResponse.json()
-    return NextResponse.json(result)
+    const result = await postToLinkedIn(profile.linkedin_token, imageUrl, caption)
+    return NextResponse.json({ success: true, data: result })
 
   } catch (error: any) {
     console.error(error)
