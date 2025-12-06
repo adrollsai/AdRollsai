@@ -1,8 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  // Better-Auth stores the session in this cookie
-  const sessionCookie = request.cookies.get("better-auth.session_token")
+  // Check for both standard and secure cookie names
+  const sessionCookie = 
+    request.cookies.get("better-auth.session_token") || 
+    request.cookies.get("__Secure-better-auth.session_token");
 
   const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
   const isLoginPage = request.nextUrl.pathname === '/'
@@ -22,7 +24,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Apply to dashboard routes and the login page
     '/dashboard/:path*',
     '/',
   ],
